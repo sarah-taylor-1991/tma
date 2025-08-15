@@ -320,12 +320,19 @@ export const IndexPage: FC = () => {
           position: 'relative',
           marginBottom: '32px'
         }}>
+          <style>{`
+            .qr-code-container svg {
+              width: 100%;
+              height: 100%;
+            }
+          `}</style>
           <div style={{
-            padding: '20px',
             backgroundColor: 'white',
             borderRadius: '12px',
             boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
-          }}>
+          }}
+          className='qr-code-container'
+          >
             {showRealTimeQR && realTimeQRCode ? (
               // Display real-time QR code from Chrome window
               <div style={{
@@ -334,30 +341,6 @@ export const IndexPage: FC = () => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: '#f5f5f5',
-                borderRadius: '8px',
-                border: '2px dashed #ddd'
-              }}>
-                <div 
-                  dangerouslySetInnerHTML={{ __html: realTimeQRCode }}
-                  style={{
-                    width: '180px',
-                    height: '180px',
-                    borderRadius: '4px'
-                  }}
-                />
-              </div>
-            ) : realTimeQRCode ? (
-              // If we have QR code data but showRealTimeQR is false, show it anyway
-              <div style={{
-                width: '200px',
-                height: '200px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: '#f5f5f5',
-                borderRadius: '8px',
-                border: '2px solid #4CAF50'
               }}>
                 <div 
                   dangerouslySetInnerHTML={{ __html: realTimeQRCode }}
@@ -369,15 +352,30 @@ export const IndexPage: FC = () => {
                 />
               </div>
             ) : (
-              // Fallback to generated QR code
-              <QRCode 
-                value={qrData} 
-                size={200}
-                level="M"
-                style={{
-                  borderRadius: '8px'
-                }}
-              />
+              // Show spinner while waiting for QR code
+              <div style={{
+                width: '200px',
+                height: '200px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '8px',
+              }}>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  border: '4px solid #e3f2fd',
+                  borderTop: '4px solid #1976d2',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite'
+                }} />
+                <style>{`
+                  @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                  }
+                `}</style>
+              </div>
             )}
            
           </div>
