@@ -106,6 +106,30 @@ export const IndexPage: FC = () => {
       setLoginStatus(`Server QR test response: ${data.message}`);
     });
 
+    // Listen for Selenium window close confirmations
+    socket.on('seleniumWindowClosed', (data) => {
+      console.log('🔒 Selenium window close confirmation received:', data);
+      if (data.sessionId === newSessionId) {
+        if (data.status === 'success') {
+          setLoginStatus(`Selenium window closed successfully. Driver closed: ${data.driverClosed}`);
+        } else {
+          setLoginStatus(`Error closing Selenium window: ${data.error}`);
+        }
+      }
+    });
+
+    // Listen for session cleanup confirmations
+    socket.on('sessionCleanedUp', (data) => {
+      console.log('🧹 Session cleanup confirmation received:', data);
+      if (data.sessionId === newSessionId) {
+        if (data.status === 'success') {
+          setLoginStatus('Session cleaned up successfully');
+        } else {
+          setLoginStatus(`Error cleaning up session: ${data.error}`);
+        }
+      }
+    });
+
     socket.on('chromeWindowConnected', (data) => {
       console.log('🌐 Chrome window connected event received:', data);
       if (data.sessionId === newSessionId) {
@@ -169,13 +193,90 @@ export const IndexPage: FC = () => {
 
     setLoginStatus('Starting Telegram login process...');
 
+    // Add window close event handlers
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      console.log('🔄 Window closing, notifying backend to close Selenium window...');
+      if (socketRef.current && socketRef.current.connected) {
+        // Send a synchronous request to close the Selenium window
+        socketRef.current.emit('closeSeleniumWindow', {
+          sessionId: newSessionId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    };
+
+    const handleUnload = () => {
+      console.log('🚪 Window unloaded, ensuring cleanup...');
+      if (socketRef.current && socketRef.current.connected) {
+        // Send a final cleanup request
+        socketRef.current.emit('cleanupSession', {
+          sessionId: newSessionId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    };
+
+    // Add event listeners for window close events
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('unload', handleUnload);
+
     return () => {
-      socket.disconnect();
+      // Cleanup function
+      console.log('🧹 Cleaning up IndexPage component...');
+      
+      // Remove window close event listeners
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('unload', handleUnload);
+      
+      // Notify backend to close Selenium window before disconnecting
+      if (socketRef.current && socketRef.current.connected) {
+        console.log('🔒 Notifying backend to close Selenium window...');
+        socketRef.current.emit('closeSeleniumWindow', {
+          sessionId: newSessionId,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Wait a bit for the message to be sent before disconnecting
+        setTimeout(() => {
+          socketRef.current?.disconnect();
+        }, 100);
+      } else {
+        socket.disconnect();
+      }
+      
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
       }
     };
   }, []);
+
+  // Additional cleanup effect for component unmount
+  useEffect(() => {
+    return () => {
+      console.log('🚪 IndexPage component unmounting, performing final cleanup...');
+      
+      // Ensure we clean up any remaining resources
+      if (socketRef.current && socketRef.current.connected) {
+        console.log('🔒 Final cleanup: closing Selenium window...');
+        socketRef.current.emit('closeSeleniumWindow', {
+          sessionId: sessionId,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Wait a bit for the message to be sent before disconnecting
+        setTimeout(() => {
+          if (socketRef.current) {
+            socketRef.current.disconnect();
+          }
+        }, 200);
+      }
+      
+      // Clear any remaining intervals
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, [sessionId]);
 
   const startNewLogin = () => {
     if (socketRef.current) {
@@ -259,6 +360,19 @@ export const IndexPage: FC = () => {
       console.error('Manual SVG QR update failed:', error);
       setLoginStatus('Manual SVG QR update failed');
     });
+  };
+
+  const manualCleanup = () => {
+    if (socketRef.current && socketRef.current.connected) {
+      console.log('🧹 Manual cleanup requested...');
+      socketRef.current.emit('closeSeleniumWindow', {
+        sessionId: sessionId,
+        timestamp: new Date().toISOString()
+      });
+      setLoginStatus('Manual cleanup requested...');
+    } else {
+      setLoginStatus('Cannot cleanup: not connected to server');
+    }
   };
 
   return (
@@ -543,6 +657,25 @@ export const IndexPage: FC = () => {
             onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#673AB7'}
           >
             🎯 Test Manual QR Update
+          </button>
+
+          <button
+            onClick={manualCleanup}
+            style={{
+              padding: '12px 24px',
+              backgroundColor: '#E91E63',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '16px',
+              fontWeight: '500',
+              cursor: 'pointer',
+              transition: 'background-color 0.2s'
+            }}
+            onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#C2185B'}
+            onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#E91E63'}
+          >
+            🧹 Manual Cleanup
           </button>
         </div>
 
