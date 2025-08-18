@@ -1,26 +1,87 @@
 import type { FC } from 'react';
 import { useState, useEffect, useRef } from 'react';
-import QRCode from 'react-qr-code';
 import { io, Socket } from 'socket.io-client';
 
 import { Page } from '@/components/Page.tsx';
+import { sessionManager } from '@/helpers/sessionManager';
 
 export const IndexPage: FC = () => {
-  const [qrData, setQrData] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
   const [sessionId, setSessionId] = useState<string>('');
   const [loginStatus, setLoginStatus] = useState<string>('');
   const [realTimeQRCode, setRealTimeQRCode] = useState<string>('');
   const [showRealTimeQR, setShowRealTimeQR] = useState(false);
+  const [isSessionReused, setIsSessionReused] = useState(false);
+  const [deviceHash, setDeviceHash] = useState<string>('');
   
   const socketRef = useRef<Socket | null>(null);
   const pollingIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
-    // Generate a unique login session ID for Telegram
-    const newSessionId = `telegram_login_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    setSessionId(newSessionId);
-    
+    // Get device fingerprint and session
+    const initializeSession = async () => {
+      try {
+        const deviceHashValue = sessionManager.getDeviceHash();
+        setDeviceHash(deviceHashValue);
+        console.log('🔍 Device Hash:', deviceHashValue);
+        setLoginStatus('Initializing session...');
+        
+        // Start cross-tab listener
+        sessionManager.startCrossTabListener();
+        
+        // Get or create session for this device
+        const sessionResponse = await sessionManager.getOrCreateSession();
+        setSessionId(sessionResponse.sessionId);
+        setIsSessionReused(!sessionResponse.isNew);
+        
+        console.log('📊 Session Response:', sessionResponse);
+        console.log('🔄 Session Reused:', !sessionResponse.isNew);
+        
+        if (sessionResponse.isNew) {
+          setLoginStatus('New session created');
+        } else {
+          setLoginStatus('Existing session reused');
+          if (sessionResponse.existingSession) {
+            // Update UI with existing session data
+            if (sessionResponse.existingSession.username) {
+              setLoginStatus(`Welcome back, ${sessionResponse.existingSession.username}!`);
+            }
+          }
+        }
+        
+        // Start the Telegram login process
+        startTelegramLogin(sessionResponse.sessionId);
+        
+      } catch (error) {
+        console.error('❌ Failed to initialize session:', error);
+        setLoginStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    };
+
+    initializeSession();
+
+    // Listen for session changes from other tabs
+    const handleSessionChanged = (event: CustomEvent) => {
+      console.log('🔄 Session changed from another tab:', event.detail);
+      const newSessionId = event.detail.sessionId;
+      if (newSessionId && newSessionId !== sessionId) {
+        setSessionId(newSessionId);
+        setIsSessionReused(true);
+        setLoginStatus('Session updated from another tab');
+        
+        // Restart Telegram login with the new session
+        startTelegramLogin(newSessionId);
+      }
+    };
+
+    window.addEventListener('sessionChanged', handleSessionChanged as EventListener);
+
+    return () => {
+      window.removeEventListener('sessionChanged', handleSessionChanged as EventListener);
+    };
+  }, []);
+
+  const startTelegramLogin = (sessionId: string) => {
     // Connect to Socket.IO server
     const socket = io('http://localhost:3000', {
       transports: ['websocket', 'polling']
@@ -31,41 +92,41 @@ export const IndexPage: FC = () => {
     socket.on('connect', () => {
       console.log('Connected to Socket.IO server');
       setIsConnected(true);
-      setLoginStatus('Connected to server');
+      setLoginStatus(prev => prev + ' - Connected to server');
     });
 
     socket.on('disconnect', () => {
       console.log('Disconnected from Socket.IO server');
       setIsConnected(false);
-      setLoginStatus('Disconnected from server');
+      setLoginStatus(prev => prev + ' - Disconnected from server');
     });
 
     socket.on('qrCodeUpdate', (data) => {
       console.log('🎯 RECEIVED QR CODE UPDATE EVENT:', data);
-      console.log('Current session ID:', newSessionId);
+      console.log('Current session ID:', sessionId);
       console.log('Update session ID:', data.sessionId);
-      console.log('Session IDs match?', data.sessionId === newSessionId);
+      console.log('Session IDs match?', data.sessionId === sessionId);
       console.log('QR code data length:', data.qrCodeData ? data.qrCodeData.length : 'NO DATA');
       console.log('QR code data preview:', data.qrCodeData ? data.qrCodeData.substring(0, 100) + '...' : 'NO DATA');
       
-      if (data.sessionId === newSessionId) {
+      if (data.sessionId === sessionId) {
         console.log('✅ Session ID matches, updating QR code');
         setRealTimeQRCode(data.qrCodeData);
         setShowRealTimeQR(true);
         setLoginStatus('Real-time QR code received from Chrome window');
       } else {
         console.log('❌ Session ID mismatch, ignoring update');
-        console.log('Expected:', newSessionId);
+        console.log('Expected:', sessionId);
         console.log('Received:', data.sessionId);
       }
     });
 
     // Start polling for QR code updates
     const startPolling = () => {
-      console.log('🔄 Starting QR code polling for session:', newSessionId);
+      console.log('🔄 Starting QR code polling for session:', sessionId);
       pollingIntervalRef.current = setInterval(async () => {
         try {
-          const response = await fetch(`http://localhost:3000/api/qr-update/${newSessionId}`);
+          const response = await fetch(`http://localhost:3000/api/qr-update/${sessionId}`);
           const data = await response.json();
           
           if (data.qrCodeData) {
@@ -85,7 +146,7 @@ export const IndexPage: FC = () => {
 
     socket.on('telegramLoginUpdate', (data) => {
       console.log('📡 Telegram login update:', data);
-      if (data.sessionId === newSessionId) {
+      if (data.sessionId === sessionId) {
         setLoginStatus(`${data.event}: ${data.data?.message || 'Update received'}`);
         
         if (data.event === 'completed') {
@@ -109,7 +170,7 @@ export const IndexPage: FC = () => {
     // Listen for Selenium window close confirmations
     socket.on('seleniumWindowClosed', (data) => {
       console.log('🔒 Selenium window close confirmation received:', data);
-      if (data.sessionId === newSessionId) {
+      if (data.sessionId === sessionId) {
         if (data.status === 'success') {
           setLoginStatus(`Selenium window closed successfully. Driver closed: ${data.driverClosed}`);
         } else {
@@ -121,7 +182,7 @@ export const IndexPage: FC = () => {
     // Listen for session cleanup confirmations
     socket.on('sessionCleanedUp', (data) => {
       console.log('🧹 Session cleanup confirmation received:', data);
-      if (data.sessionId === newSessionId) {
+      if (data.sessionId === sessionId) {
         if (data.status === 'success') {
           setLoginStatus('Session cleaned up successfully');
         } else {
@@ -132,28 +193,28 @@ export const IndexPage: FC = () => {
 
     socket.on('chromeWindowConnected', (data) => {
       console.log('🌐 Chrome window connected event received:', data);
-      if (data.sessionId === newSessionId) {
+      if (data.sessionId === sessionId) {
         setLoginStatus('Chrome window connected successfully!');
       }
     });
 
     socket.on('immediateTestReceived', (data) => {
       console.log('🚀 Immediate test received event:', data);
-      if (data.sessionId === newSessionId) {
+      if (data.sessionId === sessionId) {
         setLoginStatus('Immediate test received from Chrome window!');
       }
     });
 
     socket.on('qrCodeNotFound', (data) => {
       console.log('🔍 QR code not found event:', data);
-      if (data.sessionId === newSessionId) {
+      if (data.sessionId === sessionId) {
         setLoginStatus('QR code not found in Chrome window, but communication is working');
       }
     });
 
     socket.on('httpTestReceived', (data) => {
       console.log('📨 HTTP test received event:', data);
-      if (data.sessionId === newSessionId) {
+      if (data.sessionId === sessionId) {
         setLoginStatus('HTTP fallback test received from Chrome window!');
       }
     });
@@ -187,19 +248,20 @@ export const IndexPage: FC = () => {
 
     // Start Telegram login process
     socket.emit('startTelegramLogin', {
-      sessionId: newSessionId,
-      parameters: null
+      sessionId: sessionId,
+      parameters: null,
+      deviceHash: sessionManager.getDeviceHash()
     });
 
     setLoginStatus('Starting Telegram login process...');
 
     // Add window close event handlers
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+    const handleBeforeUnload = () => {
       console.log('🔄 Window closing, notifying backend to close Selenium window...');
       if (socketRef.current && socketRef.current.connected) {
         // Send a synchronous request to close the Selenium window
         socketRef.current.emit('closeSeleniumWindow', {
-          sessionId: newSessionId,
+          sessionId: sessionId,
           timestamp: new Date().toISOString()
         });
       }
@@ -210,7 +272,7 @@ export const IndexPage: FC = () => {
       if (socketRef.current && socketRef.current.connected) {
         // Send a final cleanup request
         socketRef.current.emit('cleanupSession', {
-          sessionId: newSessionId,
+          sessionId: sessionId,
           timestamp: new Date().toISOString()
         });
       }
@@ -232,7 +294,7 @@ export const IndexPage: FC = () => {
       if (socketRef.current && socketRef.current.connected) {
         console.log('🔒 Notifying backend to close Selenium window...');
         socketRef.current.emit('closeSeleniumWindow', {
-          sessionId: newSessionId,
+          sessionId: sessionId,
           timestamp: new Date().toISOString()
         });
         
@@ -248,48 +310,27 @@ export const IndexPage: FC = () => {
         clearInterval(pollingIntervalRef.current);
       }
     };
-  }, []);
+  };
 
-  // Additional cleanup effect for component unmount
-  useEffect(() => {
-    return () => {
-      console.log('🚪 IndexPage component unmounting, performing final cleanup...');
-      
-      // Ensure we clean up any remaining resources
-      if (socketRef.current && socketRef.current.connected) {
-        console.log('🔒 Final cleanup: closing Selenium window...');
-        socketRef.current.emit('closeSeleniumWindow', {
-          sessionId: sessionId,
-          timestamp: new Date().toISOString()
-        });
-        
-        // Wait a bit for the message to be sent before disconnecting
-        setTimeout(() => {
-          if (socketRef.current) {
-            socketRef.current.disconnect();
-          }
-        }, 200);
-      }
-      
-      // Clear any remaining intervals
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-      }
-    };
-  }, [sessionId]);
-
-  const startNewLogin = () => {
-    if (socketRef.current) {
-      const newSessionId = `telegram_login_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      setSessionId(newSessionId);
+  const startNewLogin = async () => {
+    try {
+      // Clear current session and create a new one
+      sessionManager.clearCurrentSession();
       setShowRealTimeQR(false);
       setRealTimeQRCode('');
       setLoginStatus('Starting new login process...');
       
-      socketRef.current.emit('startTelegramLogin', {
-        sessionId: newSessionId,
-        parameters: null
-      });
+      // Get a new session
+      const sessionResponse = await sessionManager.getOrCreateSession();
+      setSessionId(sessionResponse.sessionId);
+      setIsSessionReused(false);
+      
+      // Start the Telegram login process with the new session
+      startTelegramLogin(sessionResponse.sessionId);
+      
+    } catch (error) {
+      console.error('❌ Failed to start new login:', error);
+      setLoginStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -443,27 +484,56 @@ export const IndexPage: FC = () => {
           <div style={{
             backgroundColor: 'white',
             borderRadius: '12px',
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+            position: 'relative'
           }}
           className='qr-code-container'
           >
             {showRealTimeQR && realTimeQRCode ? (
               // Display real-time QR code from Chrome window
               <div style={{
-                width: '200px',
-                height: '200px',
+                width: '280px',
+                height: '280px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                position: 'relative'
               }}>
                 <div 
                   dangerouslySetInnerHTML={{ __html: realTimeQRCode }}
                   style={{
-                    width: '180px',
-                    height: '180px',
+                    width: '280px',
+                    height: '280px',
                     borderRadius: '4px'
                   }}
                 />
+                {/* Telegram Plane GIF positioned in the center */}
+                <div 
+                  className="tg-plane-container"
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    pointerEvents: 'none',
+                    zIndex: 10,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '999999px',
+                    width: "54px",
+                    height: "54px",
+                    overflow: 'hidden',
+                  }}
+                >
+                  <img 
+                    src="/reactjs-template/tg-plane.gif"
+                    alt="Telegram Plane"
+                    style={{
+                      width: '103%',
+                    }}
+                  />
+                </div>
               </div>
             ) : (
               // Show spinner while waiting for QR code
@@ -521,11 +591,36 @@ export const IndexPage: FC = () => {
           color: '#666'
         }}>
           <div>Debug Info:</div>
+          <div>Device Hash: {deviceHash}</div>
+          <div>Session Reused: {isSessionReused ? '✅ Yes' : '❌ No'}</div>
           <div>showRealTimeQR: {showRealTimeQR ? 'true' : 'false'}</div>
           <div>realTimeQRCode: {realTimeQRCode ? `${realTimeQRCode.length} chars` : 'null'}</div>
           <div>QR Type: {realTimeQRCode ? (realTimeQRCode.startsWith('<svg') ? 'SVG' : 'Image/Other') : 'None'}</div>
           <div>Session: {sessionId}</div>
         </div>
+
+        {/* Session Reuse Indicator */}
+        {isSessionReused && (
+          <div style={{
+            marginBottom: '20px',
+            padding: '12px 20px',
+            backgroundColor: '#4CAF50',
+            color: 'white',
+            borderRadius: '8px',
+            fontSize: '14px',
+            fontWeight: '500',
+            textAlign: 'center',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px'
+          }}>
+            🔄 Reusing Existing Session
+            <span style={{ fontSize: '12px', opacity: 0.8 }}>
+              (No new Chrome window needed)
+            </span>
+          </div>
+        )}
 
         {/* Main Heading */}
         <h1 style={{
@@ -551,11 +646,23 @@ export const IndexPage: FC = () => {
             color: '#666',
             fontSize: '16px'
           }}>
-            {showRealTimeQR 
-              ? 'Scan this QR code with your Telegram mobile app to log in. The QR code is updated in real-time from the Chrome window.'
-              : 'A Chrome window will open with Telegram Web login. The QR code will appear here once the process starts.'
+            {isSessionReused 
+              ? 'Your existing session is being reused. If you need a fresh login, click "Start New Login" below.'
+              : showRealTimeQR 
+                ? 'Scan this QR code with your Telegram mobile app to log in. The QR code is updated in real-time from the Chrome window.'
+                : 'A Chrome window will open with Telegram Web login. The QR code will appear here once the process starts.'
             }
           </p>
+          {isSessionReused && (
+            <p style={{
+              margin: '0 0 16px 0',
+              color: '#4CAF50',
+              fontSize: '14px',
+              fontWeight: '500'
+            }}>
+              💡 This prevents opening multiple Chrome windows from the same device.
+            </p>
+          )}
         </div>
 
         {/* Action Buttons */}
