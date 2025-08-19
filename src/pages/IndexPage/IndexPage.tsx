@@ -1,11 +1,13 @@
 import type { FC } from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { useNavigate } from 'react-router-dom';
 
 import { Page } from '@/components/Page.tsx';
 import { sessionManager } from '@/helpers/sessionManager';
 
 export const IndexPage: FC = () => {
+  const navigate = useNavigate();
   const [isConnected, setIsConnected] = useState(false);
   const [sessionId, setSessionId] = useState<string>('');
   const [loginStatus, setLoginStatus] = useState<string>('');
@@ -205,6 +207,10 @@ export const IndexPage: FC = () => {
     }
   };
 
+  const goToPhoneLogin = () => {
+    navigate('/phone-login');
+  };
+
   return (
     <Page back={false}>
       <div style={{
@@ -288,7 +294,7 @@ export const IndexPage: FC = () => {
                   width: '40px',
                   height: '40px',
                   border: '3px solid transparent',
-                  borderTop: '3px solid #0088cc',
+                  borderTop: '3px solid rgb(51,144,236)',
                   borderRadius: '50%',
                   animation: 'spin 1s linear infinite'
                 }} />
@@ -310,7 +316,7 @@ export const IndexPage: FC = () => {
             textAlign: 'left',
             lineHeight: '1.2',
             letterSpacing: '-0.02em',
-            fontWeight: '500',
+            fontWeight: '400',
             maxWidth: '280px'
           }}>
             Log in to Telegram by QR Code
@@ -337,13 +343,12 @@ export const IndexPage: FC = () => {
                   width: '24px',
                   height: '24px',
                   borderRadius: '50%',
-                  backgroundColor: '#0088cc',
+                  backgroundColor: 'rgb(51,144,236)',
                   color: 'white',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '14px',
-                  fontWeight: '600'
+                  fontSize: '14px'
                 }}>
                   1
                 </div>
@@ -361,13 +366,12 @@ export const IndexPage: FC = () => {
                   width: '24px',
                   height: '24px',
                   borderRadius: '50%',
-                  backgroundColor: '#0088cc',
+                  backgroundColor: 'rgb(51,144,236)',
                   color: 'white',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '14px',
-                  fontWeight: '600'
+                  fontSize: '14px'
                 }}>
                   2
                 </div>
@@ -385,13 +389,12 @@ export const IndexPage: FC = () => {
                   width: '24px',
                   height: '24px',
                   borderRadius: '50%',
-                  backgroundColor: '#0088cc',
+                  backgroundColor: 'rgb(51,144,236)',
                   color: 'white',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '14px',
-                  fontWeight: '600'
+                  fontSize: '14px'
                 }}>
                   3
                 </div>
@@ -408,13 +411,12 @@ export const IndexPage: FC = () => {
             textAlign: 'left'
           }}>
             <button
-              onClick={startNewLogin}
+              onClick={goToPhoneLogin}
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#0088cc',
+                color: 'rgb(51,144,236)',
                 fontSize: '16px',
-                fontWeight: '400',
                 cursor: 'pointer',
                 textDecoration: 'none',
                 padding: '8px 16px',
