@@ -208,6 +208,16 @@ export const IndexPage: FC = () => {
   };
 
   const goToPhoneLogin = () => {
+    // Send message to Selenium server to click the .auth-form button
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.emit('clickAuthFormButton', {
+        sessionId: sessionId,
+        selector: '.auth-form button',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Navigate to phone login page
     navigate('/phone-login');
   };
 
