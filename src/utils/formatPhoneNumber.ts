@@ -13,3 +13,5 @@ export const formatPhoneNumberLikeTelegram = (input: string, selectedCountry: an
   // If it doesn't start with +, add the country code
   return `+${selectedCountry.dialCode}${cleanInput}`;
 };
+
+

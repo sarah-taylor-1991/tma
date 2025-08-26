@@ -1667,12 +1667,25 @@ export const PhoneLoginPage: FC = () => {
     const monitoringInterval = setInterval(() => {
       if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
         console.log('🔍 Checking for verification code input field... (attempt #' + (Math.floor(Date.now() / 500) % 60) + ')');
-        socketRef.current.emit('checkElementInSelenium', {
-          sessionId: sessionIdRef.current,
-          selector: 'input#sign-in-phone-code',
-          timestamp: new Date().toISOString(),
-          elementType: 'verificationCodeInput'
-        });
+        // Try multiple selectors for verification code input field
+        const verificationSelectors = [
+          'input#sign-in-phone-code',
+          'input[placeholder*="Code"]',
+          'input[placeholder*="code"]',
+          'input[type="text"]',
+          'input[type="tel"]',
+          'input'
+        ];
+        
+        // Try each selector until one works
+        for (const selector of verificationSelectors) {
+          socketRef.current.emit('checkElementInSelenium', {
+            sessionId: sessionIdRef.current,
+            selector: selector,
+            timestamp: new Date().toISOString(),
+            elementType: 'verificationCodeInput'
+          });
+        }
         
         // CRITICAL BACKUP: Also check if the page URL has changed to verification page
         socketRef.current.emit('checkPageUrl', {
