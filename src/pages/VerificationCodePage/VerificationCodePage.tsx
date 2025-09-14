@@ -304,7 +304,12 @@ export const VerificationCodePage: React.FC = () => {
                   socketRef.current?.once('clickNumberEditButtonResult', (data) => {
                     if (data.sessionId === sessionId && data.success) {
                       console.log('[pencil] ✅ Number edit button clicked, navigating to phone login');
-                      navigate(`/phone-login?sessionId=${sessionId}`);
+                      console.log('[pencil] 📞 Current phone number from URL:', phoneNumber);
+                      // Pass the phone number back to preserve user input
+                      const phoneParam = phoneNumber ? `&phoneNumber=${encodeURIComponent(phoneNumber)}` : '';
+                      const navigationUrl = `/phone-login?sessionId=${sessionId}${phoneParam}`;
+                      console.log('[pencil] 🔗 Navigation URL:', navigationUrl);
+                      navigate(navigationUrl);
                     } else if (data.sessionId === sessionId && !data.success) {
                       console.log('[pencil] ❌ Number edit button click failed:', data.error);
                     }
