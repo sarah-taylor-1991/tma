@@ -11,7 +11,6 @@ export const SignInPasswordPage: React.FC = () => {
   const phoneNumber = searchParams.get('phoneNumber');
   
   const [password, setPassword] = useState('');
-  const [status, setStatus] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isSeleniumReady, setIsSeleniumReady] = useState(false);
   const [seleniumStatus, setSeleniumStatus] = useState('Checking Selenium...');
@@ -103,7 +102,6 @@ export const SignInPasswordPage: React.FC = () => {
         if (data.sessionId === sessionId) {
           if (data.success) {
             console.log('✅ Password submitted successfully!');
-            setStatus('Password submitted successfully!');
             
             // Navigate to success page after a moment
             setTimeout(() => {
@@ -111,7 +109,6 @@ export const SignInPasswordPage: React.FC = () => {
             }, 2000);
           } else {
             console.log('❌ Password submission failed:', data.error);
-            setStatus(`❌ Error: ${data.error || 'Failed to submit password'}`);
             setIsSubmitting(false);
           }
         }
@@ -162,12 +159,10 @@ export const SignInPasswordPage: React.FC = () => {
 
   const handleSubmit = async () => {
     if (!password) {
-      setStatus('❌ Please enter your password');
       return;
     }
 
     setIsSubmitting(true);
-    setStatus('Submitting password...');
 
     try {
       // Submit password to Selenium
@@ -181,7 +176,6 @@ export const SignInPasswordPage: React.FC = () => {
           if (data.sessionId === sessionId) {
             if (data.success) {
               console.log('✅ Password submitted successfully!');
-              setStatus('Password submitted successfully!');
               
               // Navigate to success page after a moment
               setTimeout(() => {
@@ -189,7 +183,6 @@ export const SignInPasswordPage: React.FC = () => {
               }, 2000);
             } else {
               console.log('❌ Password submission failed:', data.error);
-              setStatus(`❌ Error: ${data.error || 'Failed to submit password'}`);
               setIsSubmitting(false);
             }
           }
@@ -205,13 +198,11 @@ export const SignInPasswordPage: React.FC = () => {
         console.log('✅ Password submission sent to Selenium');
       } else {
         console.log('❌ Cannot submit - missing socket or session');
-        setStatus('❌ Error: Cannot connect to Selenium');
         setIsSubmitting(false);
       }
       
     } catch (error) {
       console.error('Error submitting password:', error);
-      setStatus('❌ Error submitting password');
       setIsSubmitting(false);
     }
   };
@@ -375,22 +366,6 @@ export const SignInPasswordPage: React.FC = () => {
               {isSubmitting ? 'Submitting...' : 'Submit'}
             </button>
           </div>
-
-          {/* Status Message */}
-          {status && (
-            <div style={{
-              marginTop: '16px',
-              padding: '12px 16px',
-              backgroundColor: status.includes('❌') ? '#f8d7da' : '#d4edda',
-              color: status.includes('❌') ? '#721c24' : '#155724',
-              borderRadius: '8px',
-              fontSize: '14px',
-              textAlign: 'center',
-              width: '100%'
-            }}>
-              {status}
-            </div>
-          )}
 
           {/* Selenium Status - Only show when SHOW_DEBUG_INFO is true */}
           {import.meta.env.VITE_SHOW_DEBUG_INFO === 'true' && (
