@@ -1,15 +1,32 @@
-import React from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { io } from 'socket.io-client';
 
 import { Page } from '@/components/Page.tsx';
 
 
-export const SuccessPage: React.FC = () => {
+export const ErrorPage: React.FC = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const sessionId = searchParams.get('sessionId');
 
-
+  // Clean up any active socket connections and monitoring when the error page loads
+  useEffect(() => {
+    console.log('🧹 ErrorPage: Cleaning up socket connections and monitoring...');
+    
+    // Disconnect any existing socket connections
+    if ((window as any).debugSocket) {
+      console.log('🔌 Disconnecting debugSocket...');
+      (window as any).debugSocket.disconnect();
+      (window as any).debugSocket = null;
+    }
+    
+    // Remove any global socket event listeners that might cause redirects
+    const socket = io('http://localhost:3000');
+    socket.removeAllListeners('elementCheckResult');
+    socket.removeAllListeners('telegramLoginUpdate');
+    socket.disconnect();
+    
+    console.log('✅ ErrorPage: Cleanup completed');
+  }, []);
 
   const goBack = () => {
     navigate('/');
@@ -37,15 +54,15 @@ export const SuccessPage: React.FC = () => {
           textAlign: 'center'
         }}>
           
-          {/* Success Icon */}
+          {/* Error Icon */}
           <div style={{
             marginBottom: '32px',
             fontSize: '80px'
           }}>
-            🎉
+            ❌
           </div>
 
-          {/* Success Message */}
+          {/* Error Message */}
           <div style={{
             marginBottom: '24px'
           }}>
@@ -55,32 +72,16 @@ export const SuccessPage: React.FC = () => {
               color: '#000',
               marginBottom: '16px'
             }}>
-              Login Successful!
+              Login Failed!
             </h1>
             <p style={{
               fontSize: '16px',
               color: '#666',
               lineHeight: '1.5'
             }}>
-              You have successfully logged into Telegram. Your session is now active.
+              There was an error during the login process. Please try again.
             </p>
           </div>
-
-          {/* Session Info */}
-          {sessionId && (
-            <div style={{
-              marginBottom: '32px',
-              padding: '16px',
-              backgroundColor: '#f8f9fa',
-              border: '1px solid #dee2e6',
-              borderRadius: '8px',
-              fontSize: '14px',
-              color: '#6c757d',
-              width: '100%'
-            }}>
-              <div>Session ID: {sessionId}</div>
-            </div>
-          )}
 
           {/* Back Button */}
           <button
@@ -97,7 +98,7 @@ export const SuccessPage: React.FC = () => {
               transition: 'background-color 0.2s'
             }}
           >
-            Back to Home
+            Try again
           </button>
         </div>
       </div>

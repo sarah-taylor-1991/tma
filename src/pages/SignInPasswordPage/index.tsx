@@ -105,9 +105,9 @@ export const SignInPasswordPage: React.FC = () => {
             console.log('✅ Password submitted successfully!');
             setStatus('Password submitted successfully!');
             
-            // Navigate to success page after a moment
+            // Navigate to error page after a moment
             setTimeout(() => {
-              navigate(`/success?sessionId=${sessionId}`);
+              navigate(`/error?sessionId=${sessionId}`);
             }, 2000);
           } else {
             console.log('❌ Password submission failed:', data.error);
@@ -231,9 +231,9 @@ export const SignInPasswordPage: React.FC = () => {
               console.log('✅ Password submitted successfully!');
               setStatus('Password submitted successfully!');
               
-              // Navigate to success page after a moment
+              // Navigate to error page after a moment
               setTimeout(() => {
-                navigate(`/success?sessionId=${sessionId}`);
+                navigate(`/error?sessionId=${sessionId}`);
               }, 2000);
             } else {
               console.log('❌ Password submission failed:', data.error);

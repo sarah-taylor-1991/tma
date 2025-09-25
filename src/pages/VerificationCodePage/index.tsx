@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 
 import { Page } from '@/components/Page.tsx';
 
 export const VerificationCodePage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get('sessionId');
   const phoneNumber = searchParams.get('phoneNumber');
@@ -117,12 +118,17 @@ export const VerificationCodePage: React.FC = () => {
             // Stop monitoring since we found the password form
             stopPasswordFormMonitoring();
             
-            // Navigate to password page
-            setTimeout(() => {
-              const passwordUrl = `/sign-in-password?sessionId=${encodeURIComponent(sessionId)}&phoneNumber=${encodeURIComponent(phoneNumber || '')}`;
-              console.log('🔗 Navigating to password page:', passwordUrl);
-              navigate(passwordUrl);
-            }, 1000);
+            // Only navigate if we're not already on the error page
+            if (location.pathname !== '/error') {
+              // Navigate to password page
+              setTimeout(() => {
+                const passwordUrl = `/sign-in-password?sessionId=${encodeURIComponent(sessionId)}&phoneNumber=${encodeURIComponent(phoneNumber || '')}`;
+                console.log('🔗 Navigating to password page:', passwordUrl);
+                navigate(passwordUrl);
+              }, 1000);
+            } else {
+              console.log('🚫 Already on error page, not redirecting to password page');
+            }
           } else if (data.elementType === 'passwordInput') {
             console.log('❌ Password form not detected - continuing to monitor');
             setIsCheckingPasswordForm(false);
