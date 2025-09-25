@@ -142,54 +142,6 @@ export const SignInPasswordPage: React.FC = () => {
     }
   };
 
-  // Format phone number with proper spacing like Telegram
-  const formatPhoneNumber = (phone: string) => {
-    // Remove any existing spaces and non-digit characters except +
-    const clean = phone.replace(/[^\d+]/g, '');
-    
-    // If it starts with +, format with spaces
-    if (clean.startsWith('+')) {
-      const countryCode = clean.substring(0, 4); // +358
-      const remaining = clean.substring(4);
-      
-      // Handle different phone number lengths gracefully
-      if (remaining.length >= 9) {
-        const areaCode = remaining.substring(0, 3);      // 403
-        const firstGroup = remaining.substring(3, 6);    // 624
-        const secondGroup = remaining.substring(6, 9);   // 026
-        const extra = remaining.substring(9);            // any remaining digits
-        
-        let formatted = `${countryCode} ${areaCode} ${firstGroup} ${secondGroup}`;
-        if (extra) {
-          formatted += ` ${extra}`;
-        }
-        return formatted;
-      } else if (remaining.length >= 6) {
-        const areaCode = remaining.substring(0, 3);      // 403
-        const firstGroup = remaining.substring(3, 6);    // 624
-        const extra = remaining.substring(6);            // any remaining digits
-        
-        let formatted = `${countryCode} ${areaCode} ${firstGroup}`;
-        if (extra) {
-          formatted += ` ${extra}`;
-        }
-        return formatted;
-      } else if (remaining.length >= 3) {
-        const areaCode = remaining.substring(0, 3);      // 403
-        const extra = remaining.substring(3);            // any remaining digits
-        
-        let formatted = `${countryCode} ${areaCode}`;
-        if (extra) {
-          formatted += ` ${extra}`;
-        }
-        return formatted;
-      } else {
-        return `${countryCode} ${remaining}`;
-      }
-    }
-    
-    return clean;
-  };
 
   const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;

