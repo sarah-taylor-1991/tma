@@ -900,6 +900,11 @@ export const PhoneLoginPage: FC = () => {
     setShowCountryDropdown(false);
     setCountrySearchTerm(''); // Clear search when country is selected
     
+    // Update the input value directly
+    if (countryInputRef.current) {
+      countryInputRef.current.value = `${country.flag} ${country.name}`;
+    }
+    
     // Set phone number to country dial code with a space after it
     setPhoneNumber(country.dialCode + ' ');
     
@@ -990,6 +995,24 @@ export const PhoneLoginPage: FC = () => {
       countryInputRef.current.value = `${selectedCountry.flag} ${selectedCountry.name}`;
     }
   }, [selectedCountry, countrySearchTerm]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (showCountryDropdown && !target.closest('.country-dropdown-container')) {
+        console.log('🖱️ Click outside detected, closing dropdown');
+        setShowCountryDropdown(false);
+        setCountrySearchTerm('');
+      }
+    };
+
+    // Use click instead of mousedown to avoid interfering with country selection
+    document.addEventListener('click', handleClickOutside);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [showCountryDropdown]);
 
   // Function to detect user's country based on IP address (like Telegram does)
   const detectUserCountry = async () => {
@@ -1286,19 +1309,21 @@ export const PhoneLoginPage: FC = () => {
                 </label>
               </div>
               
-              <div style={{
-                border: '1px solid #e1e8ed',
-                borderRadius: '8px',
-                padding: '0 16px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                backgroundColor: 'white',
-                transition: 'border-color 0.2s',
-                height: '48px',
-                boxSizing: 'border-box',
-                position: 'relative'
-              }}
+              <div 
+                className="country-dropdown-container"
+                style={{
+                  border: '1px solid #e1e8ed',
+                  borderRadius: '8px',
+                  padding: '0 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: 'white',
+                  transition: 'border-color 0.2s',
+                  height: '48px',
+                  boxSizing: 'border-box',
+                  position: 'relative'
+                }}
               onMouseEnter={(e) => e.currentTarget.style.borderColor = '#0088cc'}
               onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e1e8ed'}
             >
@@ -1355,7 +1380,8 @@ export const PhoneLoginPage: FC = () => {
                   top: '100%',
                   left: 0,
                   right: 0,
-                  backgroundColor: 'white',
+                  backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                  backdropFilter: 'blur(10px)',
                   border: '1px solid #e1e8ed',
                   borderRadius: '8px',
                   maxHeight: '300px',
@@ -1368,28 +1394,74 @@ export const PhoneLoginPage: FC = () => {
                     getFilteredCountries().map((country) => (
                       <div
                         key={country.code}
-                        onClick={() => handleCountrySelect(country)}
+                        onClick={(e) => {
+                          console.log('🖱️ Country clicked:', country.name, 'Event:', e);
+                          e.preventDefault();
+                          e.stopPropagation();
+                          console.log('🖱️ About to call handleCountrySelect');
+                          handleCountrySelect(country);
+                          console.log('🖱️ handleCountrySelect called');
+                        }}
+                        onMouseDown={(e) => {
+                          console.log('🖱️ Country mousedown:', country.name);
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
                         style={{
-                          padding: '12px 16px',
+                          padding: '6px 16px',
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          borderBottom: '1px solid #f0f0f0',
-                          transition: 'background-color 0.2s'
+                          transition: 'background-color 0.2s',
+                          height: '32px',
+                          position: 'relative',
+                          zIndex: 10
                         }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(248, 249, 250, 0.8)'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px'
-                        }}>
-                          <span style={{ fontSize: '18px' }}>{country.flag}</span>
-                          <span style={{ fontSize: '16px', color: '#333' }}>{country.name}</span>
+                        <div 
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px'
+                          }}
+                          onClick={(e) => {
+                            console.log('🖱️ Inner div clicked:', country.name);
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleCountrySelect(country);
+                          }}
+                        >
+                          <span 
+                            style={{ fontSize: '18px' }}
+                            onClick={(e) => {
+                              console.log('🖱️ Flag clicked:', country.name);
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleCountrySelect(country);
+                            }}
+                          >{country.flag}</span>
+                          <span 
+                            style={{ fontSize: '16px', color: '#333' }}
+                            onClick={(e) => {
+                              console.log('🖱️ Country name clicked:', country.name);
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleCountrySelect(country);
+                            }}
+                          >{country.name}</span>
                         </div>
-                        <span style={{ fontSize: '14px', color: '#666' }}>{country.dialCode}</span>
+                        <span 
+                          style={{ fontSize: '14px', color: '#666' }}
+                          onClick={(e) => {
+                            console.log('🖱️ Dial code clicked:', country.name);
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleCountrySelect(country);
+                          }}
+                        >{country.dialCode}</span>
                       </div>
                     ))
                   ) : (
