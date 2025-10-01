@@ -19,16 +19,20 @@ export function Page({ children, back = true }: PropsWithChildren<{
           return onBackButtonClick(() => {
             navigate(-1);
           });
-        } else {
-          // If not in Telegram Mini App, just hide the back button
+        }
+        // If not in Telegram Mini App, don't call hideBackButton() as it's not available
+      }).catch(() => {
+        // If there's an error checking the environment, don't call hideBackButton() as it's not available
+      });
+    } else {
+      // Only try to hide the back button if we're in a Telegram Mini App
+      isTMA('complete').then((isTelegramApp) => {
+        if (isTelegramApp) {
           hideBackButton();
         }
       }).catch(() => {
-        // If there's an error checking the environment, hide the back button to be safe
-        hideBackButton();
+        // If there's an error checking the environment, don't call hideBackButton()
       });
-    } else {
-      hideBackButton();
     }
   }, [back, navigate]);
 
