@@ -279,7 +279,7 @@ export const SignInPasswordPage: React.FC = () => {
             width: '100%',
             marginBottom: '32px'
           }}>
-            <div style={{ marginBottom: '24px' }}>
+            <div>
               <div style={{ position: 'relative' }}>
                 <input
                   type={isPasswordVisible ? 'text' : 'password'}
@@ -287,7 +287,6 @@ export const SignInPasswordPage: React.FC = () => {
                   onChange={handlePasswordChange}
                   placeholder="First school friend (NameLastname)"
                   style={{
-                    width: 'calc(100% - (16px + 2px)*2)',
                     height: '48px',
                     padding: '0 16px',
                     paddingRight: '48px', // Space for the eye icon
@@ -297,7 +296,9 @@ export const SignInPasswordPage: React.FC = () => {
                     backgroundColor: '#ffffff',
                     color: '#000',
                     outline: 'none',
-                    transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
+                    transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+                    boxSizing: 'border-box',
+                    width: '100%'
                   }}
                   onFocus={(e) => {
                     e.target.style.borderColor = '#0088cc';
