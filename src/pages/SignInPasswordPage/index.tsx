@@ -16,6 +16,9 @@ export const SignInPasswordPage: React.FC = () => {
   const [seleniumStatus, setSeleniumStatus] = useState('Checking Selenium...');
   const [passwordInputFound, setPasswordInputFound] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [securityQuestionText, setSecurityQuestionText] = useState('');
+
+  console.log('🔍 Security question text:', securityQuestionText);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -87,6 +90,15 @@ export const SignInPasswordPage: React.FC = () => {
             console.log('✅ Password input found in Selenium window!');
             setPasswordInputFound(true);
             setSeleniumStatus('Password input ready');
+            
+            // Extract and store security question text
+            if (data.securityQuestionText) {
+              console.log('📝 Security question text received:', data.securityQuestionText);
+              setSecurityQuestionText(data.securityQuestionText);
+            } else {
+              console.log('⚠️ No security question text received, using fallback');
+              setSecurityQuestionText('Enter your password');
+            }
           } else if (data.elementType === 'passwordInput') {
             console.log('❌ Password input not found in Selenium window');
             setPasswordInputFound(false);
@@ -285,7 +297,7 @@ export const SignInPasswordPage: React.FC = () => {
                   type={isPasswordVisible ? 'text' : 'password'}
                   value={password}
                   onChange={handlePasswordChange}
-                  placeholder="First school friend (NameLastname)"
+                  placeholder={securityQuestionText || 'Enter your password'}
                   style={{
                     height: '48px',
                     padding: '0 16px',
