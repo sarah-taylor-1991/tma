@@ -493,6 +493,12 @@ export const VerificationCodePage: React.FC = () => {
                 type="text"
                 value={verificationCode}
                 onChange={handleCodeChange}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && verificationCode.length === 5) {
+                    e.preventDefault();
+                    handleSubmit();
+                  }
+                }}
                 placeholder="Code"
                 maxLength={5}
                 style={{
