@@ -4,10 +4,7 @@ import { io, Socket } from 'socket.io-client';
 import { useNavigate } from 'react-router-dom';
 
 import { Page } from '@/components/Page.tsx';
-import { QRCodeDisplay } from '@/components/IndexPage/QRCodeDisplay.tsx';
 import { sessionManager } from '@/helpers/sessionManager';
-import { useSeleniumSocket } from '@/hooks/useSeleniumSocket.ts';
-import { useTelegramSession } from '@/hooks/useTelegramSession.ts';
 
 /**
  * IndexPage Component
@@ -27,27 +24,17 @@ import { useTelegramSession } from '@/hooks/useTelegramSession.ts';
  */
 export const IndexPage: FC = () => {
   const navigate = useNavigate();
+  const [isConnected, setIsConnected] = useState(false);
+  const [sessionId, setSessionId] = useState<string>('');
+  const [_loginStatus, setLoginStatus] = useState<string>('');
   const [realTimeQRCode, setRealTimeQRCode] = useState<string | null>(null);
   const [showRealTimeQR, setShowRealTimeQR] = useState(false);
+  const [_isSessionReused, setIsSessionReused] = useState(false);
+  const [isSeleniumReady, setIsSeleniumReady] = useState(false);
+  const [seleniumStatus, setSeleniumStatus] = useState<string>('Waiting for Selenium...');
   const [isPhoneLoginLoading, setIsPhoneLoginLoading] = useState(false);
-  
-  const uid = sessionManager.getUid();
-  const { sessionId, loginStatus, isSessionReused } = useTelegramSession(uid);
-  
-  const {
-    isConnected,
-    isSeleniumReady,
-    seleniumStatus,
-    phoneLoginButtonFound,
-  } = useSeleniumSocket({
-    sessionId,
-    onSeleniumReady: () => {
-      // Additional logic when Selenium becomes ready
-    },
-    onPhoneLoginButtonFound: () => {
-      // Additional logic when phone login button is found
-    },
-  });
+  const [phoneLoginButtonFound, setPhoneLoginButtonFound] = useState(false);
+  const [uid, setUid] = useState<string | null>(null);
   
   const socketRef = useRef<Socket | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);

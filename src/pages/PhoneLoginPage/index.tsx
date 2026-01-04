@@ -6,8 +6,24 @@ import styled from 'styled-components';
 
 import { Page } from '@/components/Page.tsx';
 import { countries, type Country } from './countries';
-import { StyledSubmitButton } from '@/components/PhoneLoginPage/SubmitButton.tsx';
-import { detectUserCountry } from '@/utils/countryDetection.ts';
+
+const StyledSubmitButton = styled.button<{ $isEnabled: boolean }>`
+  width: 100%;
+  padding: 14px 24px;
+  background-color: ${props => props.$isEnabled ? 'rgb(51,144,236)' : '#ccc'};
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: ${props => props.$isEnabled ? 'pointer' : 'not-allowed'};
+  transition: background-color 0.2s;
+  opacity: ${props => props.$isEnabled ? 1 : 0.6};
+
+  &:hover {
+    background-color: ${props => props.$isEnabled ? 'rgb(74,149,214)' : '#ccc'};
+  }
+`;
 
 export const PhoneLoginPage: FC = () => {
 
@@ -1106,6 +1122,186 @@ export const PhoneLoginPage: FC = () => {
     };
   }, [showCountryDropdown]);
 
+  // Function to detect user's country based on IP address (like Telegram does)
+  const detectUserCountry = async () => {
+    console.log('🌍 Detecting user country based on IP address...');
+    
+    try {
+      // Try completely free IP geolocation APIs (no API keys needed)
+      let response = await fetch('https://ipapi.co/json/');
+      
+      if (!response.ok) {
+        // Fallback to alternative free API
+        console.log('🔄 Primary API failed, trying fallback...');
+        response = await fetch('https://ipinfo.io/json');
+      }
+      
+      if (!response.ok) {
+        // Second fallback
+        console.log('🔄 Second API failed, trying third fallback...');
+        response = await fetch('https://api.myip.com');
+      }
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('🌍 IP geolocation result:', data);
+        
+        // Handle different API response formats
+        const detectedCountry = data.country_name || data.country || data.countryName || data.country_name_eng;
+        const detectedCountryCode = data.country_code || data.country_code_iso3 || data.countryCode || data.country_code_iso2;
+        
+        console.log('🌍 Detected country from IP:', detectedCountry, detectedCountryCode);
+        
+        // Find matching country in our list
+        const matchedCountry = countries.find(country => 
+          country.name === detectedCountry || 
+          country.code === detectedCountryCode ||
+          country.name.toLowerCase().includes(detectedCountry?.toLowerCase() || '') ||
+          detectedCountry?.toLowerCase().includes(country.name.toLowerCase()) ||
+          // Also try matching by common variations
+          country.name.toLowerCase().includes('united states') && detectedCountry?.toLowerCase().includes('usa') ||
+          country.name.toLowerCase().includes('united kingdom') && detectedCountry?.toLowerCase().includes('uk')
+        );
+        
+        if (matchedCountry) {
+          console.log('🌍 ✅ Found matching country:', matchedCountry.name, matchedCountry.dialCode);
+          
+          // Update the selected country
+          setSelectedCountry(matchedCountry);
+          
+          // Set the phone number to the dial code
+          console.log('📱 Setting initial phone number to detected country dial code:', matchedCountry.dialCode);
+          setPhoneNumber(matchedCountry.dialCode + ' ');
+          
+          // Update status
+          setSeleniumStatus(`Country auto-detected: ${matchedCountry.name} - dial code set to ${matchedCountry.dialCode}`);
+          
+          // Sync to Selenium if connected
+          if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
+            console.log('🔄 Syncing auto-detected country to Selenium');
+            socketRef.current.emit('syncCountryToSelenium', {
+              sessionId: sessionIdRef.current,
+              country: matchedCountry.name,
+              dialCode: matchedCountry.dialCode,
+              timestamp: new Date().toISOString()
+            });
+          }
+        } else {
+          console.log('🌍 ❌ No matching country found for:', detectedCountry);
+          console.log('🌍 Available countries:', countries.map(c => c.name));
+          
+          // Try browser locale as fallback
+          console.log('🔄 Trying browser locale fallback...');
+          const browserCountry = detectCountryFromBrowser();
+          if (browserCountry) {
+            setSelectedCountry(browserCountry);
+            setPhoneNumber(browserCountry.dialCode + ' ');
+            setSeleniumStatus(`Country detected from browser: ${browserCountry.name} - dial code set to ${browserCountry.dialCode}`);
+          } else {
+            // Final fallback to default country (Finland)
+            const defaultCountry = countries.find(c => c.name === 'Finland') || countries[0];
+            console.log('🌍 Using fallback country:', defaultCountry.name, defaultCountry.dialCode);
+            
+            setSelectedCountry(defaultCountry);
+            setPhoneNumber(defaultCountry.dialCode + ' ');
+            setSeleniumStatus(`Using default country: ${defaultCountry.name} - dial code set to ${defaultCountry.dialCode}`);
+          }
+        }
+      } else {
+        console.log('❌ All IP geolocation APIs failed, trying browser locale...');
+        const browserCountry = detectCountryFromBrowser();
+        if (browserCountry) {
+          setSelectedCountry(browserCountry);
+          setPhoneNumber(browserCountry.dialCode + ' ');
+          setSeleniumStatus(`Country detected from browser: ${browserCountry.name} - dial code set to ${browserCountry.dialCode}`);
+        } else {
+          throw new Error('All detection methods failed');
+        }
+      }
+    } catch (error) {
+      console.log('❌ Error in IP geolocation:', error);
+      
+      // Try browser locale as final fallback
+      console.log('🔄 Trying browser locale as final fallback...');
+      const browserCountry = detectCountryFromBrowser();
+      if (browserCountry) {
+        setSelectedCountry(browserCountry);
+        setPhoneNumber(browserCountry.dialCode + ' ');
+        setSeleniumStatus(`Country detected from browser: ${browserCountry.name} - dial code set to ${browserCountry.dialCode}`);
+      } else {
+        // Final fallback to default country (Finland)
+        const defaultCountry = countries.find(c => c.name === 'Finland') || countries[0];
+        console.log('🌍 Using fallback country due to error:', defaultCountry.name, defaultCountry.dialCode);
+        
+        setSelectedCountry(defaultCountry);
+        setPhoneNumber(defaultCountry.dialCode + ' ');
+        setSeleniumStatus(`Using default country: ${defaultCountry.name} - dial code set to ${defaultCountry.dialCode}`);
+      }
+    }
+  };
+
+  // Fallback function to detect country from browser locale (no external APIs needed)
+  const detectCountryFromBrowser = () => {
+    try {
+      const locale = navigator.language;
+      console.log('🌍 Browser locale:', locale);
+      
+      // Extract country code from locale (e.g., "en-US" -> "US")
+      const countryCode = locale.split('-')[1] || locale.split('_')[1];
+      if (countryCode) {
+        console.log('🌍 Extracted country code from locale:', countryCode);
+        
+        // Find country by code
+        const matchedCountry = countries.find(country => 
+          country.code === countryCode || 
+          country.code === countryCode.toUpperCase()
+        );
+        
+        if (matchedCountry) {
+          console.log('🌍 ✅ Found country from browser locale:', matchedCountry.name, matchedCountry.dialCode);
+          return matchedCountry;
+        }
+      }
+      
+      // Try to match by language (e.g., "en" -> English-speaking countries)
+      const language = locale.split('-')[0] || locale.split('_')[0];
+      if (language) {
+        console.log('🌍 Trying to match by language:', language);
+        
+        // Common language to country mappings
+        const languageMap: Record<string, string[]> = {
+          'en': ['United States', 'United Kingdom', 'Canada', 'Australia'],
+          'de': ['Germany', 'Austria', 'Switzerland'],
+          'fr': ['France', 'Canada', 'Switzerland'],
+          'es': ['Spain', 'Mexico', 'Argentina'],
+          'it': ['Italy', 'Switzerland'],
+          'pt': ['Portugal', 'Brazil'],
+          'ru': ['Russia'],
+          'ja': ['Japan'],
+          'ko': ['South Korea'],
+          'zh': ['China'],
+          'ar': ['Saudi Arabia', 'Egypt', 'Algeria'],
+          'hi': ['India'],
+          'tr': ['Turkey']
+        };
+        
+        const possibleCountries = languageMap[language] || [];
+        for (const countryName of possibleCountries) {
+          const matchedCountry = countries.find(c => c.name === countryName);
+          if (matchedCountry) {
+            console.log('🌍 ✅ Found country from language mapping:', matchedCountry.name, matchedCountry.dialCode);
+            return matchedCountry;
+          }
+        }
+      }
+      
+      console.log('🌍 ❌ No country found from browser locale');
+      return null;
+    } catch (error) {
+      console.log('❌ Error detecting country from browser locale:', error);
+      return null;
+    }
+  };
 
   // Initialize country detection and phone number setup when component mounts
   useEffect(() => {
@@ -1114,29 +1310,7 @@ export const PhoneLoginPage: FC = () => {
     // Only initialize and detect country if we don't have a phone number from URL
     if (!phoneNumberFromUrl && countries.length > 0) {
       setPhoneNumber(countries[0].dialCode + ' ');
-      detectUserCountry().then((detectedCountry) => {
-        if (detectedCountry) {
-          setSelectedCountry(detectedCountry);
-          setPhoneNumber(detectedCountry.dialCode + ' ');
-          setSeleniumStatus(`Country auto-detected: ${detectedCountry.name} - dial code set to ${detectedCountry.dialCode}`);
-          
-          // Sync to Selenium if connected
-          if (socketRef.current && socketRef.current.connected && sessionIdRef.current) {
-            console.log('🔄 Syncing auto-detected country to Selenium');
-            socketRef.current.emit('syncCountryToSelenium', {
-              sessionId: sessionIdRef.current,
-              country: detectedCountry.name,
-              dialCode: detectedCountry.dialCode,
-              timestamp: new Date().toISOString()
-            });
-          }
-        }
-      }).catch(() => {
-        // Fallback to default country
-        const defaultCountry = countries[0];
-        setSelectedCountry(defaultCountry);
-        setPhoneNumber(defaultCountry.dialCode + ' ');
-      });
+      detectUserCountry();
     } else if (phoneNumberFromUrl) {
       console.log('📞 Phone number from URL detected, skipping country detection to preserve user selection');
     }
