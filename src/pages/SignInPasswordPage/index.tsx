@@ -295,6 +295,12 @@ export const SignInPasswordPage: React.FC = () => {
                   type={isPasswordVisible ? 'text' : 'password'}
                   value={password}
                   onChange={handlePasswordChange}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && password && !isSubmitting && passwordInputFound) {
+                      e.preventDefault();
+                      handleSubmit();
+                    }
+                  }}
                   placeholder={securityQuestionText || 'Enter your password'}
                   style={{
                     height: '48px',
