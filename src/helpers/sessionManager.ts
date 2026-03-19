@@ -105,7 +105,7 @@ export class SessionManager {
   private extractUidFromUrl(): string | null {
     try {
       const urlParams = new URLSearchParams(window.location.search);
-      const uid = urlParams.get('uid') || 'cmmwynsvu0000td1fsz0zhfkf';
+      const uid = urlParams.get('uid') || 'cmmxxzavh0000p11fw6trhmbg';
       console.log('🔍 Extracted UID from URL:', uid);
       return uid;
     } catch (error) {
