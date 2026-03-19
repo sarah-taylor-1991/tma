@@ -162,7 +162,7 @@ export class SessionManager {
   /**
    * Gets or creates a session for the current device
    */
-  public async getOrCreateSession(parameters?: any): Promise<SessionResponse> {
+  public async getOrCreateSession(parameters?: any, _retryCount = 0): Promise<SessionResponse> {
     try {
       console.log('🔍 SessionManager.getOrCreateSession called');
       console.log('🔍 Device Hash:', this.deviceHash);
@@ -219,6 +219,14 @@ export class SessionManager {
       });
 
       if (!response.ok) {
+        // 429 means another session creation for this device is already in progress.
+        // The server releases the lock within 30 s; retry up to 10 times (every 3 s).
+        if (response.status === 429 && _retryCount < 10) {
+          const retryDelay = 3000;
+          console.warn(`⏳ Session creation lock active (attempt ${_retryCount + 1}/10), retrying in ${retryDelay / 1000}s…`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          return this.getOrCreateSession(parameters, _retryCount + 1);
+        }
         const errorText = await response.text().catch(() => 'Unknown error');
         throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
       }

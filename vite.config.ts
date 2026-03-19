@@ -5,7 +5,7 @@ import mkcert from 'vite-plugin-mkcert';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: '/',
+  base: '/telegram-mini-app/',
   // No need for define since we're using VITE_ prefix
   css: {
     preprocessorOptions: {
