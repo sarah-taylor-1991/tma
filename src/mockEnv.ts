@@ -1,11 +1,7 @@
 import { mockTelegramEnv, isTMA, emitEvent } from '@telegram-apps/sdk-react';
 
-// It is important, to mock the environment only for development purposes. When building the
-// application, import.meta.env.DEV will become false, and the code inside will be tree-shaken,
-// so you will not see it in your final bundle.
-if (import.meta.env.DEV) {
-  if (!await isTMA('complete')) {
-    const themeParams = {
+if (!await isTMA('complete')) {
+  const themeParams = {
       accent_text_color: '#6ab2f2',
       bg_color: '#17212b',
       button_color: '#5288c1',
@@ -72,7 +68,6 @@ if (import.meta.env.DEV) {
     });
 
     console.info(
-      '⚠️ As long as the current environment was not considered as the Telegram-based one, it was mocked. Take a note, that you should not do it in production and current behavior is only specific to the development process. Environment mocking is also applied only in development mode. So, after building the application, you will not see this behavior and related warning, leading to crashing the application outside Telegram.',
+      '⚠️ Running outside Telegram - environment has been mocked for browser debugging.',
     );
-  }
 }
