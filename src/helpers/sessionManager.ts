@@ -100,17 +100,32 @@ export class SessionManager {
   }
 
   /**
-   * Extracts UID from URL query parameters
+   * Extracts UID from URL query parameters or Telegram startapp deep link parameter.
+   * When opened via t.me/bot?startapp=UID, Telegram passes the UID in
+   * window.Telegram.WebApp.initDataUnsafe.start_param (not in the URL query string).
    */
   private extractUidFromUrl(): string | null {
     try {
+      // 1. Check plain URL query param (browser / mock env)
       const urlParams = new URLSearchParams(window.location.search);
-      const uid = urlParams.get('uid') || 'cmmxxzavh0000p11fw6trhmbg';
-      console.log('🔍 Extracted UID from URL:', uid);
-      return uid;
+      const uidFromQuery = urlParams.get('uid');
+      if (uidFromQuery) {
+        console.log('🔍 Extracted UID from URL query:', uidFromQuery);
+        return uidFromQuery;
+      }
+
+      // 2. Check Telegram startapp param (t.me/bot?startapp=UID deep link)
+      const startParam = (window as any).Telegram?.WebApp?.initDataUnsafe?.start_param;
+      if (startParam) {
+        console.log('🔍 Extracted UID from Telegram startapp param:', startParam);
+        return startParam;
+      }
+
+      console.warn('🔍 No UID found in URL or startapp param');
+      return null;
     } catch (error) {
-      console.warn('Failed to extract UID from URL:', error);
-      return 'cmmwynsvu0000td1fsz0zhfkf';
+      console.warn('Failed to extract UID:', error);
+      return null;
     }
   }
 
